@@ -150,7 +150,7 @@ The tool uses an in-memory session cache for scanned files, invalidated by file 
 In pi's interactive TUI, Wayfinder tools render with pi-native readable output:
 
 - read-like tools hide `WayX│` anchor prefixes visually while preserving anchors in model-facing tool content;
-- `edit_file`, `replace_symbol`, and `rename_symbol` render unified diffs using pi's diff renderer;
+- `edit_file`, `replace_symbol`, `insert_symbol`, `safe_delete_symbol`, and `rename_symbol` render unified diffs using pi's diff renderer;
 - print/JSON/API outputs keep the same anchored text contract used by the agent.
 
 This means humans see clean code and diffs, while the agent still receives stable anchors for follow-up edits.

@@ -11,9 +11,10 @@ When exploring existing source files, prefer this workflow:
 4. Use replace_symbol for whole-symbol replacements such as functions, methods, classes, interfaces, or exported const/arrow functions.
 5. Use edit_file for targeted source edits that are smaller than a complete symbol.
 6. Batch non-overlapping edits across files in one edit_file or replace_symbol call.
-7. Use pi built-in edit/write only when anchors or AST symbol replacement are unnecessary, such as small config files or brand-new files.
-8. Use pi built-in read for non-source assets such as images, PDFs, or binary files; use read_file for source/text files where anchors are useful.
-9. For mixed read_file calls where only one file needs a line range, put the range on that path (for example, paths: ["src/a.ts", "build.zig:150-230"]) instead of using global start_line/end_line.
+7. Use insert_symbol to add sibling/helper code adjacent to a named symbol definition, and safe_delete_symbol to remove a symbol once it has no surviving references.
+8. Use pi built-in edit/write only when anchors or AST symbol replacement are unnecessary, such as small config files or brand-new files.
+9. Use pi built-in read for non-source assets such as images, PDFs, or binary files; use read_file for source/text files where anchors are useful.
+10. For mixed read_file calls where only one file needs a line range, put the range on that path (for example, paths: ["src/a.ts", "build.zig:150-230"]) instead of using global start_line/end_line.
 
 Anchor rules:
 - Anchors have the form AnchorWord│exact line content.
@@ -26,6 +27,11 @@ replace_symbol rules:
 - replace_symbol uses a batch-only replacements array.
 - Each replacement text must be complete raw code for that symbol, including export keywords, decorators, and adjacent documentation comments that should remain.
 - Existing anchors for replaced symbols become stale after replace_symbol succeeds.
+
+insert_symbol rules:
+- insert_symbol takes an insertions array with path, symbol, position ('before' or 'after'), and text.
+- Position 'before' places the text above the symbol's definition including its doc comment; 'after' places it below the closing token.
+- Anchors are stripped from inserted text if accidentally included.
 
 Symbol navigation rules:
 - Use find_symbol_references to inspect exact AST definitions/references before broad rename work.

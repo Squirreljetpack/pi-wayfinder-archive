@@ -42,6 +42,24 @@ export const ReplaceSymbolSchema = Type.Object({
 });
 
 
+export const InsertSymbolSchema = Type.Object({
+  insertions: Type.Array(Type.Object({
+    path: Type.String({ description: "Relative or absolute source file path" }),
+    symbol: Type.String({ description: "Dot-separated symbol path or suffix to insert adjacent to" }),
+    position: Type.Union([Type.Literal("before"), Type.Literal("after")], { description: "Insert before or after the symbol definition" }),
+    text: Type.String({ description: "Code to insert" }),
+    type: Type.Optional(Type.String({ description: "Optional symbol type such as function, method, class, or interface" }))
+  }))
+});
+
+export const SafeDeleteSymbolSchema = Type.Object({
+  path: Type.String({ description: "Relative or absolute source file path containing the symbol" }),
+  symbol: Type.String({ description: "Dot-separated symbol path or suffix to delete" }),
+  type: Type.Optional(Type.String({ description: "Optional symbol type such as function, method, class, or interface" })),
+  paths: Type.Optional(Type.Array(Type.String({ description: "Files/directories to scan for references (default: project root)" }))),
+  force: Type.Optional(Type.Boolean({ description: "Delete even if references exist (default: false)" }))
+});
+
 export const FindSymbolReferencesSchema = Type.Object({
   paths: Type.Array(Type.String({ description: "Relative or absolute files/directories to search" })),
   symbols: Type.Array(Type.String({ description: "Exact symbol names to find" })),

@@ -35,7 +35,7 @@ export interface EditFailureDetails {
 class EditFileError extends Error {
   constructor(
     message: string,
-    readonly failure: EditFailureDetails
+    readonly failure: EditFailureDetails,
   ) {
     super(message);
     this.name = "EditFileError";
@@ -87,12 +87,18 @@ async function withFileMutationQueues<T>(canonicalTargetKeys: string[], fn: () =
   return runWithQueue(0);
 }
 
-function resolveAnchor(rawAnchor: string | undefined, anchors: string[], lines: string[], fieldName = "anchor"): number {
+function resolveAnchor(
+  rawAnchor: string | undefined,
+  anchors: string[],
+  lines: string[],
+  fieldName = "anchor",
+): number {
   if (!rawAnchor) {
     throw new EditFileError(`${fieldName} is missing`, { fieldName, message: `${fieldName} is missing` });
   }
   if (!rawAnchor.includes(ANCHOR_DELIMITER)) {
-    const message = `${fieldName} must be a raw anchored line in the form AnchorWord${ANCHOR_DELIMITER}exact line content`;
+    const message =
+      `${fieldName} must be a raw anchored line in the form AnchorWord${ANCHOR_DELIMITER}exact line content`;
     throw new EditFileError(message, { fieldName, message });
   }
 
@@ -110,14 +116,16 @@ function resolveAnchor(rawAnchor: string | undefined, anchors: string[], lines: 
 
   if (lines[index] !== content) {
     const line = index + 1;
-    const message = `anchor content mismatch at line ${line}; current ${JSON.stringify(lines[index])}, requested ${JSON.stringify(content)}`;
+    const message = `anchor content mismatch at line ${line}; current ${JSON.stringify(lines[index])}, requested ${
+      JSON.stringify(content)
+    }`;
     throw new EditFileError(message, {
       anchor,
       line,
       fieldName,
       currentContent: lines[index],
       requestedContent: content,
-      message
+      message,
     });
   }
   return index;
@@ -165,11 +173,13 @@ export function registerEditFileTool(pi: ExtensionAPI, anchors: AnchorStateManag
     description: "Apply batched multi-file edits using stable anchors returned by read_file or AST tools.",
     promptSnippet: "Edit existing source files using stable anchors from read_file/get_function/get_file_skeleton.",
     promptGuidelines: [
-      "Use edit_file for source-code edits after reading anchors with read_file, get_function, or get_file_skeleton."
+      "Use edit_file for source-code edits ONLY after reading anchors with read_file, get_function, or get_file_skeleton.",
     ],
     parameters: EditFileSchema,
     renderCall(args, theme) {
-      const files = Array.isArray(args.files) ? args.files.map((file) => file.path).filter((path): path is string => typeof path === "string") : [];
+      const files = Array.isArray(args.files)
+        ? args.files.map((file) => file.path).filter((path): path is string => typeof path === "string")
+        : [];
       return renderCodeLikeCall("edit_file", files, theme);
     },
     renderResult(result, options, theme, context) {
@@ -181,7 +191,7 @@ export function registerEditFileTool(pi: ExtensionAPI, anchors: AnchorStateManag
         return {
           file,
           absolutePath,
-          canonicalKey: canonicalTargetKey(absolutePath)
+          canonicalKey: canonicalTargetKey(absolutePath),
         };
       });
       const seenPaths = new Set<string>();
@@ -218,7 +228,7 @@ export function registerEditFileTool(pi: ExtensionAPI, anchors: AnchorStateManag
               nextLines,
               nextContent,
               diff,
-              editCount: file.edits.length
+              editCount: file.edits.length,
             });
           } catch (error) {
             throwIfAborted(signal);
@@ -234,7 +244,7 @@ export function registerEditFileTool(pi: ExtensionAPI, anchors: AnchorStateManag
             files: params.files.map((file) => file.path),
             diffs: [],
             diff: "",
-            failures
+            failures,
           };
           throw error;
         }
@@ -257,9 +267,9 @@ export function registerEditFileTool(pi: ExtensionAPI, anchors: AnchorStateManag
           files: params.files.map((file) => file.path),
           diffs,
           diff: combineDiffs(diffs),
-          firstChangedLine: diffs[0]?.firstChangedLine
-        } satisfies EditFileToolDetails
+          firstChangedLine: diffs[0]?.firstChangedLine,
+        } satisfies EditFileToolDetails,
       };
-    }
+    },
   });
 }

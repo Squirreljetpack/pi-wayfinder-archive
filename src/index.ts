@@ -9,9 +9,11 @@ import { registerEditFileTool } from "./tools/edit-file.js";
 import { registerFindSymbolReferencesTool } from "./tools/find-symbol-references.js";
 import { registerGetFileSkeletonTool } from "./tools/get-file-skeleton.js";
 import { registerGetFunctionTool } from "./tools/get-function.js";
+import { registerInsertSymbolTool } from "./tools/insert-symbol.js";
 import { registerReadFileTool } from "./tools/read-file.js";
 import { registerRenameSymbolTool } from "./tools/rename-symbol.js";
 import { registerReplaceSymbolTool } from "./tools/replace-symbol.js";
+import { registerSafeDeleteSymbolTool } from "./tools/safe-delete-symbol.js";
 
 const MODE_STATE_CUSTOM_TYPE = "pi-wayfinder:mode";
 
@@ -50,6 +52,8 @@ export default function wayfinderExtension(pi: ExtensionAPI): void {
   registerGetFileSkeletonTool(pi, anchors);
   registerGetFunctionTool(pi, anchors);
   registerReplaceSymbolTool(pi, anchors);
+  registerInsertSymbolTool(pi, anchors);
+  registerSafeDeleteSymbolTool(pi, anchors, symbolScanner);
 
   registerFindSymbolReferencesTool(pi, anchors, symbolScanner);
   registerRenameSymbolTool(pi, anchors, symbolScanner);

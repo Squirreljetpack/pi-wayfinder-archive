@@ -81,6 +81,8 @@ const expectedWayfinderTools = [
   "get_file_skeleton",
   "get_function",
   "replace_symbol",
+  "insert_symbol",
+  "safe_delete_symbol",
   "find_symbol_references",
   "rename_symbol"
 ];
