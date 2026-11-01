@@ -560,3 +560,27 @@ Design notes worth remembering:
   equality, rollback-of-rollback, drift refusal, force, unknown id, unavailable database.
   `test/setup.ts` points `PI_WAYFINDER_HOME` at a temp dir per test file so tests never touch the
   real cache. Totals: 155 passing, typecheck clean.
+
+### Milestone 6 — prompt, README, annotations (done)
+
+- `prompt.ts` rewritten around the real tool surface: skeleton → function → read, symbol tools for
+  whole symbols, `edit` mode selection by cost ("exact" small, "between" large, "lines" when the
+  numbers were just read), one batched call, transaction id → rollback.
+- README rewritten: tool table, mode examples, transaction/rollback semantics, the SQLite
+  inspection one-liner, and the incompatibility note (pi refuses two extensions that register the
+  same tool names, so `pi-wayfinder` and `pi-wayfinder2` cannot both be enabled).
+- `annotations` added to `edit` and `rollback` (`destructiveHint`, `openWorldHint: false`) so
+  permission extensions can gate them.
+- NOTICE now credits pi-wayfinder alongside Dirac.
+- Verified against the live harness (`pi -p --mode json`, extension-only): the `<tools>` block lists
+  our `read`, our `edit` (with its own snippet) and `rollback`, pi's built-in `edit` guidelines are
+  gone, and our guidelines appear. `prepareArguments` is called by pi-agent-core's
+  `prepareToolCallArguments` *before* `validateToolArguments`, so the shims are on the real path.
+
+### Milestone 7 — smoke (partial)
+
+Registration, tool listing, prompt injection and `prepareArguments` ordering are verified live.
+An end-to-end tool-call round trip is still blocked: this environment's configured models are not
+reachable (`Model "…" not found`), so no model ever emits a tool call here. The remaining check is
+`pi -e .` in a scratch repo with a working model: one `edit` across two files, a `between` edit, and
+a `rollback`.

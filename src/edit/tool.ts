@@ -110,6 +110,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
       "Line-number gutters copied from read output are stripped from replacement text.",
     ],
     parameters: EditSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     prepareArguments: normalizeEditArguments,
     renderCall(args, theme) {
       const paths = Array.isArray(args.edits)

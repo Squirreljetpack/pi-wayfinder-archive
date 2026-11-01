@@ -13,7 +13,6 @@ export interface RollbackToolDetails {
   diffs: DiffDetails[];
   diff: string;
   firstChangedLine?: number;
-  undoneTransactionId: string | null;
 }
 
 function messageOf(error: unknown): string {
@@ -33,6 +32,7 @@ export function registerRollbackTool(pi: ExtensionAPI): void {
       "A rollback is recorded as its own transaction, so a mistaken rollback can be rolled back too.",
     ],
     parameters: RollbackSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     renderCall(args, theme) {
       return renderCodeLikeCall("rollback", [], theme, typeof args.transaction_id === "string" ? theme.fg("dim", ` (${args.transaction_id})`) : "");
     },
@@ -119,7 +119,6 @@ export function registerRollbackTool(pi: ExtensionAPI): void {
           diffs: diffs.filter((diff) => diff.diff.length > 0),
           diff: combineDiffs(diffs),
           firstChangedLine: diffs[0]?.firstChangedLine,
-          undoneTransactionId,
         } satisfies RollbackToolDetails,
       };
     },
