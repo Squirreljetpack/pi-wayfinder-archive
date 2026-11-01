@@ -2,11 +2,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import type { AnchorStateManager } from "../anchors/AnchorStateManager.js";
-import { stripHashes } from "../anchors/line-hashing.js";
-import { ASTAnchorBridge, type SymbolRange } from "../ast/ast-anchor-bridge.js";
+import { SymbolLocator, type SymbolRange } from "../ast/symbol-locator.js";
 import { combineDiffs, createUnifiedDiff, type DiffDetails } from "../rendering/diff-output.js";
 import { renderCodeLikeCall, renderDiffResult } from "../rendering/pi-renderers.js";
+import type { SymbolLocation, SymbolScanner } from "../symbols/symbol-scanner.js";
+import { stripLineNumbers } from "./line-numbers.js";
 import { ReplaceSymbolSchema } from "./schemas.js";
 
 export interface SymbolReplacement {
@@ -14,6 +14,7 @@ export interface SymbolReplacement {
   symbol: string;
   text: string;
   type?: string;
+  force?: boolean;
 }
 
 export interface FileReplacementBatch {
@@ -27,12 +28,17 @@ export interface ResolvedSymbolReplacement {
   range: SymbolRange;
 }
 
+export interface DeleteRange {
+  startIndex: number;
+  endIndex: number;
+}
+
 export function detectLineEnding(content: string): "\r\n" | "\n" {
   return content.match(/\r\n|\n/)?.[0] === "\r\n" ? "\r\n" : "\n";
 }
 
 export function normalizeReplacementText(text: string, lineEnding: "\r\n" | "\n"): string {
-  return stripHashes(text).replace(/\r\n|\r|\n/g, lineEnding);
+  return stripLineNumbers(text).replace(/\r\n|\r|\n/g, lineEnding);
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -43,11 +49,76 @@ function missingSymbolMessage(replacement: SymbolReplacement): string {
   return `Symbol '${replacement.symbol}'${replacement.type ? ` of type '${replacement.type}'` : ""} not found in ${replacement.path}.`;
 }
 
+/**
+ * Byte range to remove for a symbol.
+ *
+ * The removal extends through the end of the symbol's last line plus its line break, and consumes
+ * one following empty line so the deletion does not leave a dangling blank line behind.
+ */
+export function computeDeleteRange(content: string, range: SymbolRange): DeleteRange {
+  const startIndex = range.startIndex;
+
+  let lineBreak = content.indexOf("\n", range.endIndex);
+  if (lineBreak === -1) lineBreak = content.length;
+
+  // Trim trailing spaces/tabs on the symbol's final line.
+  let trimmedEnd = lineBreak;
+  while (trimmedEnd > range.endIndex && (content[trimmedEnd - 1] === " " || content[trimmedEnd - 1] === "\t")) {
+    trimmedEnd--;
+  }
+
+  // Include the line break (and the \r of \r\n, which sits right before \n).
+  let endIndex = lineBreak === content.length ? trimmedEnd : lineBreak + 1;
+
+  // Consume one following blank (whitespace-only) line, if present.
+  let probe = endIndex;
+  while (probe < content.length && (content[probe] === " " || content[probe] === "\t")) probe++;
+  if (probe < content.length && content[probe] === "\n") {
+    endIndex = probe + 1;
+  } else if (probe < content.length && content[probe] === "\r" && content[probe + 1] === "\n") {
+    endIndex = probe + 2;
+  }
+
+  return { startIndex, endIndex };
+}
+
+function offsetAt(content: string, lines: string[], line: number, column: number): number {
+  if (line <= 0) return Math.min(column, content.length);
+  const preceding = lines.slice(0, line).join("\n");
+  return Math.min(preceding.length + 1 + column, content.length);
+}
+
+/**
+ * References that would survive the deletion — references outside the removed byte range.
+ * References inside the symbol's own body disappear with it, so they do not block deletion.
+ */
+export function blockingReferences(
+  locations: SymbolLocation[],
+  symbol: string,
+  absolutePath: string,
+  content: string,
+  deleteRange: DeleteRange,
+): Array<{ displayPath: string; line: number }> {
+  const lines = content.split(/\r?\n/);
+  const blockers: Array<{ displayPath: string; line: number }> = [];
+
+  for (const location of locations) {
+    if (location.name !== symbol || location.type !== "reference") continue;
+    const offset = offsetAt(content, lines, location.startLine, location.startColumn);
+    if (location.absolutePath === absolutePath && offset >= deleteRange.startIndex && offset < deleteRange.endIndex) {
+      continue;
+    }
+    blockers.push({ displayPath: location.displayPath, line: location.startLine + 1 });
+  }
+
+  return blockers;
+}
+
 interface PreparedFileReplacementBatch {
   batch: FileReplacementBatch;
   finalContent: string;
-  finalLines: string[];
   diff: DiffDetails;
+  summaries: string[];
 }
 
 interface ReplaceSymbolToolDetails {
@@ -115,15 +186,17 @@ export function applyResolvedSymbolReplacements(
   return nextContent;
 }
 
-export function registerReplaceSymbolTool(pi: ExtensionAPI, anchors: AnchorStateManager): void {
+export function registerReplaceSymbolTool(pi: ExtensionAPI, scanner: SymbolScanner): void {
   pi.registerTool({
     name: "replace_symbol",
     label: "Replace Symbol",
-    description: "Replace one or more AST symbols by name using tree-sitter ranges.",
+    description: "Replace or delete AST symbols by name using tree-sitter ranges.",
     promptSnippet: "Use replace_symbol for complete function, method, class, or interface replacements.",
     promptGuidelines: [
       "Use replace_symbol when replacing an entire function, method, class, interface, or exported const/arrow function.",
-      "Provide complete raw replacement code without hash anchors; anchors are stripped if accidentally included.",
+      "Pass text: \"\" to delete a symbol; the call refuses when surviving references exist unless force is true.",
+      "Provide complete raw code without line-number prefixes; prefixes are stripped if accidentally included.",
+      "Use find_symbol_references first when a rename or signature change could affect other files.",
     ],
     parameters: ReplaceSymbolSchema,
     renderCall(args, theme) {
@@ -142,34 +215,69 @@ export function registerReplaceSymbolTool(pi: ExtensionAPI, anchors: AnchorState
       }
 
       const batches = groupReplacementsByPath(replacements, ctx.cwd);
-      const summaries: string[] = [];
       let diffs: DiffDetails[] = [];
+      const summaries: string[] = [];
 
       await withFileMutationQueues(batches.map((batch) => batch.absolutePath), async () => {
         const preparedBatches: PreparedFileReplacementBatch[] = [];
+        let locations: SymbolLocation[] | undefined;
+
+        const scanForDeletes = async (): Promise<SymbolLocation[]> => {
+          locations ??= await scanner.scanPaths([ctx.cwd], ctx.cwd, signal);
+          return locations;
+        };
 
         for (const batch of batches) {
           throwIfAborted(signal);
           const originalContent = await readFile(batch.absolutePath, { encoding: "utf8", signal });
           const lineEnding = detectLineEnding(originalContent);
-          const originalLines = originalContent.split(/\r?\n/);
-          anchors.reconcile(batch.absolutePath, originalLines);
 
           const resolved: ResolvedSymbolReplacement[] = [];
+          const deleteSummaries: string[] = [];
+
           for (const replacement of batch.replacements) {
             throwIfAborted(signal);
-            const range = await ASTAnchorBridge.getSymbolRange(batch.absolutePath, replacement.symbol, anchors, replacement.type);
+            const range = await SymbolLocator.getSymbolRange(batch.absolutePath, replacement.symbol, replacement.type);
             if (!range) throw new Error(missingSymbolMessage(replacement));
-            resolved.push({ replacement, range });
+
+            if (replacement.text !== "") {
+              resolved.push({ replacement, range });
+              continue;
+            }
+
+            const deleteRange = computeDeleteRange(originalContent, range);
+            const candidates = await scanForDeletes();
+            const blockers = blockingReferences(candidates, range.nameText, batch.absolutePath, originalContent, deleteRange);
+            if (blockers.length > 0 && replacement.force !== true) {
+              const list = blockers.map((ref) => `  ${ref.displayPath}:${ref.line}`).join("\n");
+              const label = blockers.length === 1 ? "reference" : "references";
+              throw new Error(
+                `Refusing to delete '${replacement.symbol}' from ${replacement.path}: ${blockers.length} surviving ${label} found.\n${list}\n\nVerify the call sites, or set force: true to delete anyway.`,
+              );
+            }
+
+            const referenceNote =
+              blockers.length > 0
+                ? `symbol '${replacement.symbol}' (${blockers.length} references ignored, force was set)`
+                : `unreferenced symbol '${replacement.symbol}'`;
+            deleteSummaries.push(`Deleted ${referenceNote} from ${replacement.path}.`);
+            resolved.push({ replacement, range: { ...range, ...deleteRange } });
           }
 
           throwIfAborted(signal);
           const finalContent = applyResolvedSymbolReplacements(originalContent, resolved, lineEnding);
+          const diff = createUnifiedDiff(batch.displayPath, originalContent, finalContent);
+          const replaced = batch.replacements.filter((replacement) => replacement.text !== "");
+          const symbolList = replaced.map((replacement) => `'${replacement.symbol}'`).join(", ");
+
           preparedBatches.push({
             batch,
             finalContent,
-            finalLines: finalContent.split(/\r?\n/),
-            diff: createUnifiedDiff(batch.displayPath, originalContent, finalContent),
+            diff,
+            summaries: [
+              ...(replaced.length > 0 ? [`Successfully replaced symbols ${symbolList} in ${batch.displayPath}.`] : []),
+              ...deleteSummaries,
+            ],
           });
         }
 
@@ -180,15 +288,13 @@ export function registerReplaceSymbolTool(pi: ExtensionAPI, anchors: AnchorState
           await mkdir(dirname(prepared.batch.absolutePath), { recursive: true });
           throwIfAborted(signal);
           await writeFile(prepared.batch.absolutePath, prepared.finalContent, { encoding: "utf8", signal });
-          anchors.reconcile(prepared.batch.absolutePath, prepared.finalLines);
-
-          const symbolList = prepared.batch.replacements.map((replacement) => `'${replacement.symbol}'`).join(", ");
-          summaries.push(`Successfully replaced symbols ${symbolList} in ${prepared.batch.displayPath}. Any existing hash anchors for these symbols are now stale.`);
+          scanner.invalidate(prepared.batch.absolutePath);
+          summaries.push(...prepared.summaries);
         }
       });
 
       return {
-        content: [{ type: "text", text: summaries.join("\n\n") }],
+        content: [{ type: "text", text: summaries.join("\n") }],
         details: {
           paths: batches.map((batch) => batch.displayPath),
           symbols: replacements.map((replacement) => replacement.symbol),

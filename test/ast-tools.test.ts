@@ -3,8 +3,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AnchorStateManager } from "../src/anchors/AnchorStateManager.js";
-import { contentHash } from "../src/anchors/line-hashing.js";
 import { registerGetFileSkeletonTool } from "../src/tools/get-file-skeleton.js";
 import { registerGetFunctionTool } from "../src/tools/get-function.js";
 
@@ -18,7 +16,7 @@ async function createTempDir(): Promise<string> {
   return dir;
 }
 
-function registerSkeletonToolForTest(anchors = new AnchorStateManager()): RegisteredTool {
+function registerSkeletonToolForTest(): RegisteredTool {
   let registeredTool: RegisteredTool | undefined;
   const pi = {
     registerTool: vi.fn((tool: RegisteredTool) => {
@@ -26,7 +24,7 @@ function registerSkeletonToolForTest(anchors = new AnchorStateManager()): Regist
     })
   };
 
-  registerGetFileSkeletonTool(pi as unknown as ExtensionAPI, anchors);
+  registerGetFileSkeletonTool(pi as unknown as ExtensionAPI);
 
   expect(registeredTool).toBeDefined();
   expect(registeredTool?.name).toBe("get_file_skeleton");
@@ -35,7 +33,7 @@ function registerSkeletonToolForTest(anchors = new AnchorStateManager()): Regist
   return registeredTool as RegisteredTool;
 }
 
-function registerFunctionToolForTest(anchors = new AnchorStateManager()): RegisteredTool {
+function registerFunctionToolForTest(): RegisteredTool {
   let registeredTool: RegisteredTool | undefined;
   const pi = {
     registerTool: vi.fn((tool: RegisteredTool) => {
@@ -43,7 +41,7 @@ function registerFunctionToolForTest(anchors = new AnchorStateManager()): Regist
     })
   };
 
-  registerGetFunctionTool(pi as unknown as ExtensionAPI, anchors);
+  registerGetFunctionTool(pi as unknown as ExtensionAPI);
 
   expect(registeredTool).toBeDefined();
   expect(registeredTool?.name).toBe("get_function");
@@ -57,7 +55,7 @@ describe("AST read tools", () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
-  it("returns anchored function and class definition lines in file skeletons", async () => {
+  it("returns numbered function and class definition lines in file skeletons", async () => {
     const cwd = await createTempDir();
     const source = [
       "import { value } from './value.js';",
@@ -81,9 +79,9 @@ describe("AST read tools", () => {
     const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
     expect(text).toContain("--- sample.ts ---");
-    expect(text).toContain("WayC│export function greet(name: string) {");
-    expect(text).toContain("WayG│class Greeter {");
-    expect(text).toContain("WayM│const helper = (value: number) => value + 1;");
+    expect(text).toContain("3│export function greet(name: string) {");
+    expect(text).toContain("7│class Greeter {");
+    expect(text).toContain("13│const helper = (value: number) => value + 1;");
     expect(text).not.toContain("return `hello ${name}`;");
     expect(result.details).toEqual({ paths: ["sample.ts"] });
   });
@@ -99,7 +97,7 @@ describe("AST read tools", () => {
     expect(text).toBe("--- notes.txt ---\nNo definitions found.");
   });
 
-  it("extracts anchored function bodies with content hashes", async () => {
+  it("extracts numbered function bodies", async () => {
     const cwd = await createTempDir();
     const source = [
       "const before = 1;",
@@ -126,16 +124,12 @@ describe("AST read tools", () => {
       { cwd } as never
     );
     const text = result.content[0]?.type === "text" ? result.content[0].text : "";
-    const lines = source.split(/\r?\n/);
-    const body = lines.slice(2, 6);
-
     expect(text).toContain("sample.ts::greet");
-    expect(text).toContain(`[Function Hash: ${contentHash(body.join("\n"))}]`);
-    expect(text).toContain("WayC│export function greet(name: string) {");
-    expect(text).toContain("WayD│  const message = `hello ${name}`;");
-    expect(text).toContain("WayE│  return message;");
-    expect(text).toContain("WayF│}");
-    expect(text).not.toContain("WayH│class Greeter {");
+    expect(text).toContain("3│export function greet(name: string) {");
+    expect(text).toContain("4│  const message = `hello ${name}`;");
+    expect(text).toContain("5│  return message;");
+    expect(text).toContain("6│}");
+    expect(text).not.toContain("8│class Greeter {");
     expect(text).not.toContain("sample.ts::Missing\nNot found.");
     expect(result.details).toEqual({ paths: ["sample.ts"], function_names: ["greet", "Missing"] });
   });
@@ -370,7 +364,7 @@ describe("AST read tools", () => {
     expect(text).toContain('const double = "}";');
     expect(text).toContain("const template = `}`;");
     expect(text).toContain("return { ok: true };");
-    expect(text).toContain("WayI│}");
+    expect(text).toContain("9│}");
     expect(text).not.toContain("const leaked = 1;");
   });
 });

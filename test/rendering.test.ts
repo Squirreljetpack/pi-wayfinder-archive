@@ -1,6 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { AnchorStateManager } from "../src/anchors/AnchorStateManager.js";
 import { SymbolCache } from "../src/symbols/symbol-cache.js";
 import { SymbolScanner } from "../src/symbols/symbol-scanner.js";
 import { createUnifiedDiff, combineDiffs, firstChangedLineFromDiff } from "../src/rendering/diff-output.js";
@@ -8,13 +7,11 @@ import {
   renderCodeLikeCall,
   renderCodeLikeResult,
   renderDiffResult,
-  stripAnchorPrefixesForDisplay,
+  stripLineNumbersForDisplay,
   shortenDisplayPath,
 } from "../src/rendering/pi-renderers.js";
-import { registerEditFileTool } from "../src/tools/edit-file.js";
 import { registerGetFileSkeletonTool } from "../src/tools/get-file-skeleton.js";
 import { registerGetFunctionTool } from "../src/tools/get-function.js";
-import { registerReadFileTool } from "../src/tools/read-file.js";
 import { registerRenameSymbolTool } from "../src/tools/rename-symbol.js";
 import { registerReplaceSymbolTool } from "../src/tools/replace-symbol.js";
 
@@ -49,9 +46,9 @@ type RegisteredTool = {
   renderResult?: (result: never, options: never, theme: never, context: never) => { render(width: number): string[] };
 };
 
-function collectTool(register: (pi: never, anchors: AnchorStateManager) => void): RegisteredTool {
+function collectTool(register: (pi: never) => void): RegisteredTool {
   let tool: RegisteredTool | undefined;
-  register({ registerTool: (registered: RegisteredTool) => { tool = registered; } } as never, new AnchorStateManager());
+  register({ registerTool: (registered: RegisteredTool) => { tool = registered; } } as never);
   if (!tool) throw new Error("tool was not registered");
   return tool;
 }
@@ -59,7 +56,7 @@ function collectTool(register: (pi: never, anchors: AnchorStateManager) => void)
 function collectRenameTool(): RegisteredTool {
   let tool: RegisteredTool | undefined;
   const scanner = new SymbolScanner(new SymbolCache());
-  registerRenameSymbolTool({ registerTool: (registered: RegisteredTool) => { tool = registered; } } as never, new AnchorStateManager(), scanner);
+  registerRenameSymbolTool({ registerTool: (registered: RegisteredTool) => { tool = registered; } } as never, scanner);
   if (!tool) throw new Error("rename_symbol was not registered");
   return tool;
 }
@@ -94,14 +91,14 @@ describe("diff-output", () => {
 });
 
 describe("pi render helpers", () => {
-  it("strips raw anchor prefixes for display", () => {
-    expect(stripAnchorPrefixesForDisplay("WayA│const value = 1;")).toBe("const value = 1;");
-    expect(stripAnchorPrefixesForDisplay("  (greet) WayB│const value = greet();")).toBe("  (greet) const value = greet();");
-    expect(stripAnchorPrefixesForDisplay("no anchor here")).toBe("no anchor here");
+  it("strips line-number gutters for display", () => {
+    expect(stripLineNumbersForDisplay("1│const value = 1;")).toBe("const value = 1;");
+    expect(stripLineNumbersForDisplay("  (greet) 12│const value = greet();")).toBe("  (greet) const value = greet();");
+    expect(stripLineNumbersForDisplay("no gutter here")).toBe("no gutter here");
   });
 
-  it("hides only unanchored display metadata lines", () => {
-    expect(stripAnchorPrefixesForDisplay("--- src/sample.ts ---\n[File Hash: abc123]\nWayA│[File Hash: source text]")).toBe("[File Hash: source text]");
+  it("hides section headers but keeps content lines", () => {
+    expect(stripLineNumbersForDisplay("--- src/sample.ts ---\n1│[File Hash: source text]")).toBe("[File Hash: source text]");
   });
 
   it("shortens long display paths", () => {
@@ -109,14 +106,14 @@ describe("pi render helpers", () => {
     expect(shortenDisplayPath("/tmp/a/very/long/path/sample.ts", 18)).toBe("…/path/sample.ts");
   });
 
-  it("renders code-like calls and results without anchor prefixes or metadata noise", () => {
-    const call = renderCodeLikeCall("read_file", ["src/sample.ts"], theme as never);
+  it("renders code-like calls and results without gutters or headers", () => {
+    const call = renderCodeLikeCall("read", ["src/sample.ts"], theme as never);
     const renderedCall = call.render(80).join("\n");
-    expect(renderedCall).toContain("read_file");
+    expect(renderedCall).toContain("read");
     expect(renderedCall).toContain("src/sample.ts");
 
     const result = renderCodeLikeResult(
-      { content: [{ type: "text", text: "--- src/sample.ts ---\n[File Hash: abc123]\nWayA│const value = 1;\nWayB│console.log(value);" }] },
+      { content: [{ type: "text", text: "--- src/sample.ts ---\n1│const value = 1;\n2│console.log(value);" }] },
       { expanded: false, isPartial: false },
       theme as never,
       renderContext,
@@ -125,9 +122,8 @@ describe("pi render helpers", () => {
 
     expect(rendered).toContain("const value = 1;");
     expect(rendered).toContain("console.log(value);");
-    expect(rendered).not.toContain("WayA│");
+    expect(rendered).not.toContain("1│");
     expect(rendered).not.toContain("src/sample.ts");
-    expect(rendered).not.toContain("File Hash");
   });
 
   it("renders diff results with pi renderDiff plumbing", () => {
@@ -146,195 +142,10 @@ describe("pi render helpers", () => {
   });
 });
 
-describe("read-like tool renderers", () => {
-  it("read_file renderer hides anchors, file header, and file hash in TUI output", () => {
-    const tool = collectTool(registerReadFileTool as never);
-    const result = tool.renderResult?.(
-      { content: [{ type: "text", text: "--- src/sample.ts ---\n[File Hash: abc123]\nWayA│const value = 1;" }] } as never,
-      { expanded: true, isPartial: false } as never,
-      theme as never,
-      { ...renderContext, args: { paths: ["src/sample.ts"] } } as never,
-    );
-
-    const rendered = result?.render(120).join("\n") || "";
-    expect(rendered.startsWith("\n")).toBe(true);
-    expect(rendered).toContain("value =");
-    expect(rendered).not.toContain("WayA│");
-    expect(rendered).not.toContain("src/sample.ts");
-    expect(rendered).not.toContain("File Hash");
-  });
-
-
-  it("read_file renderer syntax highlights inline range paths", () => {
-    const tool = collectTool(registerReadFileTool as never);
-    const result = tool.renderResult?.(
-      { content: [{ type: "text", text: "--- src/sample.ts:1-2 ---\n[File Hash: abc123]\nWayA│const value = 1;" }] } as never,
-      { expanded: true, isPartial: false } as never,
-      theme as never,
-      { ...renderContext, args: { paths: ["src/sample.ts:1-2"] } } as never,
-    );
-
-    const rendered = result?.render(120).join("\n") || "";
-    expect(rendered).toContain("\u001b[");
-    expect(rendered).toContain("value =");
-  });
-
-
-  it("read_file renderer displays multi-file reads as titled panels", () => {
-    const tool = collectTool(registerReadFileTool as never);
-    const result = tool.renderResult?.(
-      {
-        content: [
-          {
-            type: "text",
-            text: "--- first.ts ---\n[File Hash: aaa]\nWayA│const first = 1;\n\n--- second.ts ---\n[File Hash: bbb]\nWayB│const second = 2;"
-          }
-        ]
-      } as never,
-      { expanded: true, isPartial: false } as never,
-      theme as never,
-      { ...renderContext, args: { paths: ["first.ts", "second.ts"] } } as never,
-    );
-
-    const rendered = result?.render(120).join("\n") || "";
-    expect(rendered.startsWith("\n╭─ first.ts")).toBe(true);
-    expect(rendered).toContain("╭─ second.ts");
-    expect(rendered).toContain("first =");
-    expect(rendered).toContain("second =");
-    expect(rendered).toContain("╰");
-    expect(rendered).not.toContain("WayA│");
-    expect(rendered).not.toContain("File Hash");
-    expect(rendered).not.toContain("--- first.ts ---");
-  });
-
-
-  it("read_file multi-file panels truncate each file when collapsed", () => {
-    const tool = collectTool(registerReadFileTool as never);
-    const longLines = Array.from({ length: 12 }, (_, index) => `Way${index}│line ${index + 1}`).join("\n");
-    const result = tool.renderResult?.(
-      {
-        content: [
-          {
-            type: "text",
-            text: `--- first.txt ---\n[File Hash: aaa]\n${longLines}\n\n--- second.txt ---\n[File Hash: bbb]\nWayA│second line`
-          }
-        ]
-      } as never,
-      { expanded: false, isPartial: false } as never,
-      theme as never,
-      { ...renderContext, args: { paths: ["first.txt", "second.txt"] } } as never,
-    );
-
-    const rendered = result?.render(120).join("\n") || "";
-    expect(rendered).toContain("line 1");
-    expect(rendered).toContain("line 10");
-    expect(rendered).not.toContain("line 11");
-    expect(rendered).toContain("... (2 more lines, expand to view)");
-    expect(rendered).toContain("second line");
-  });
-
-  it("read_file call renderer makes global ranges explicit for all paths", () => {
-    const tool = collectTool(registerReadFileTool as never);
-    const call = tool.renderCall?.({ paths: ["short.txt", "long.txt"], start_line: 3, end_line: 4 } as never, theme as never, renderContext);
-    const rendered = call?.render(120).join("\n") || "";
-
-    expect(rendered).toContain("short.txt, long.txt");
-    expect(rendered).toContain("all:3-4");
-  });
-
+describe("ast tool renderers", () => {
   it("get_file_skeleton and get_function expose renderers", () => {
     expect(collectTool(registerGetFileSkeletonTool as never).renderResult).toBeTypeOf("function");
     expect(collectTool(registerGetFunctionTool as never).renderResult).toBeTypeOf("function");
-  });
-});
-
-describe("mutating tool renderers", () => {
-  it("edit_file renderer displays diff output", () => {
-    const tool = collectTool(registerEditFileTool as never);
-    const diff = createUnifiedDiff("sample.ts", "const value = 1;\n", "const value = 2;\n");
-    const result = tool.renderResult?.(
-      { content: [{ type: "text", text: "Updated sample.ts" }], details: { diff: diff.diff } } as never,
-      { expanded: true, isPartial: false } as never,
-      theme as never,
-      { ...renderContext, args: { files: [{ path: "sample.ts", edits: [] }] } } as never,
-    );
-
-    const rendered = result?.render(120).join("\n") || "";
-    expect(rendered).toContain("const value");
-    expect(rendered).not.toContain("Updated sample.ts");
-  });
-
-
-  it("edit_file renderer displays multi-file diffs as separate file blocks", () => {
-    const tool = collectTool(registerEditFileTool as never);
-    const first = createUnifiedDiff("first.ts", "const value = 1;\n", "const value = 2;\n");
-    const second = createUnifiedDiff("second.ts", "const name = 'old';\n", "const name = 'new';\n");
-    const result = tool.renderResult?.(
-      { content: [{ type: "text", text: "Updated files" }], details: { diff: combineDiffs([first, second]), diffs: [first, second] } } as never,
-      { expanded: true, isPartial: false } as never,
-      theme as never,
-      { ...renderContext, args: { files: [{ path: "first.ts", edits: [] }, { path: "second.ts", edits: [] }] } } as never,
-    );
-
-    const rendered = result?.render(120).join("\n") || "";
-    expect(rendered.startsWith("\n╭─ first.ts")).toBe(true);
-    expect(rendered).toContain("╭─ first.ts");
-    expect(rendered).toContain("╭─ second.ts");
-    expect(rendered).toContain("-1 const value");
-    expect(rendered).toContain("+1 const value");
-    expect(rendered).toContain("-1 const name");
-    expect(rendered).toContain("+1 const name");
-    expect(rendered).toContain("╰");
-    expect(rendered).not.toContain("File: first.ts");
-    expect(rendered).not.toContain("Index: first.ts");
-    expect(rendered).not.toContain("Index: second.ts");
-  });
-
-  it("edit_file renderer displays diff output when collapsed", () => {
-    const tool = collectTool(registerEditFileTool as never);
-    const diff = createUnifiedDiff("sample.ts", "const value = 1;\n", "const value = 2;\n");
-    const result = tool.renderResult?.(
-      { content: [{ type: "text", text: "Updated sample.ts" }], details: { diff: diff.diff } } as never,
-      { expanded: false, isPartial: false } as never,
-      theme as never,
-      { ...renderContext, args: { files: [{ path: "sample.ts", edits: [] }] } } as never,
-    );
-
-    const rendered = result?.render(120).join("\n") || "";
-    expect(rendered).toContain("const value");
-    expect(rendered).not.toContain("Updated sample.ts");
-  });
-
-
-  it("edit_file collapsed multi-file renderer keeps every edited line visible across every file", () => {
-    const tool = collectTool(registerEditFileTool as never);
-    const before = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join("\n") + "\n";
-    const after = Array.from({ length: 30 }, (_, index) => {
-      if (index === 1) return "line 2 edited";
-      if (index === 24) return "line 25 edited";
-      return `line ${index + 1}`;
-    }).join("\n") + "\n";
-    const secondBefore = Array.from({ length: 40 }, (_, index) => `other ${index + 1}`).join("\n") + "\n";
-    const secondAfter = Array.from({ length: 40 }, (_, index) => {
-      if (index === 0) return "other 1 edited";
-      if (index === 34) return "other 35 edited";
-      return `other ${index + 1}`;
-    }).join("\n") + "\n";
-    const first = createUnifiedDiff("first.ts", before, after);
-    const second = createUnifiedDiff("second.ts", secondBefore, secondAfter);
-    const result = tool.renderResult?.(
-      { content: [{ type: "text", text: "Updated files" }], details: { diff: combineDiffs([first, second]), diffs: [first, second] } } as never,
-      { expanded: false, isPartial: false } as never,
-      theme as never,
-      { ...renderContext, args: { files: [{ path: "first.ts", edits: [] }, { path: "second.ts", edits: [] }] } } as never,
-    );
-
-    const rendered = result?.render(120).join("\n") || "";
-    expect(rendered).toContain("+ 2 line 2 edited");
-    expect(rendered).toContain("+25 line 25 edited");
-    expect(rendered).toContain("+ 1 other 1 edited");
-    expect(rendered).toContain("+35 other 35 edited");
-    expect(rendered).toContain("...");
   });
 });
 

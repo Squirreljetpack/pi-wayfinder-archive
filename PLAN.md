@@ -410,3 +410,47 @@ pi-wayfinder2/
 3. **`between`/`lines` are language-agnostic** (pure text); only the AST tools are language-gated.
 4. **No git coupling** — rollback snapshots are the safety net; requiring a clean worktree would
    make the tool unusable outside repos.
+
+## 14. Progress
+
+Progress notes live here rather than in a separate `%%…_PROGRESS.md`; the plan and the log stay together.
+
+### Milestone 1 — scaffold + de-anchored AST half (done)
+
+Baseline before edits: upstream imported verbatim → `npm run typecheck` clean against pi 1.4.0,
+`vitest` 180/180. That commit is the fork's starting point and the proof that the 0.74→1.4 delta
+was additive for the code we kept.
+
+Done:
+
+- `src/anchors/` deleted. `AnchorStateManager`, `line-hashing.ts` (`ANCHOR_DELIMITER`,
+  `formatLineWithHash`, `splitAnchor`, `stripHashes`, `contentHash`) are gone with it; the only
+  anchor-era file that survived is the `diff` module declaration, moved to `src/types/diff.d.ts`.
+- `ast/ast-anchor-bridge.ts` → `ast/symbol-locator.ts`, class `ASTAnchorBridge` → `SymbolLocator`.
+  `getFileSkeleton(path)`, `getFunctions(path, relPath, names)`, `getSymbolRange(path, symbol, type?)`
+  no longer take or reconcile anchors; every rendered row goes through `formatNumberedLine()`.
+  `[Function Hash: …]` and the "anchors are stable, use edit_file" banner are gone.
+- `tools/line-numbers.ts`: gutter is `12│code` (box-drawing separator, deliberately not `|`/`:`
+  so a copied gutter can be stripped without mistaking `8080: host` for one). `stripLineNumbers()`
+  matches `/^\s*\d+│/` — **no optional space after the separator**, because that space is content
+  and eating it silently re-indented every replacement line (caught by ported tests).
+- `replace_symbol` absorbed deletion (`text: ""`), with `computeDeleteRange` + `blockingReferences`
+  moved in from the deleted `safe-delete-symbol.ts`; `force` is now a per-replacement flag and a
+  refusal throws (naming each surviving reference location) instead of returning `deleted: false`.
+  It also invalidates the scanner cache after writing, which upstream's version did not.
+- `find_symbol_references`, `get_file_skeleton`, `get_function`, `insert_symbol`, `rename_symbol`
+  render numbers, take no anchors, and no longer print "existing anchors are now stale" advisories.
+- `rendering/pi-renderers.ts`: `stripAnchorPrefixesForDisplay` → `stripLineNumbersForDisplay`;
+  hash-line filtering and the multi-file read panel (`TitledPanel` kept for multi-file diffs) gone.
+- `index.ts` is 25 lines: two caches, six AST tools, one prompt hook, one cache reset. `mode.ts`,
+  the three mode flags, the `/wayfinder` command and `setActiveTools` plumbing are deleted.
+- Tests: 100 passing (upstream's 180 minus the deleted suites, plus the ported deletion suite).
+  `symbol-locator.test.ts` asserts line numbers instead of anchor tokens.
+
+Deviations from the plan: none. `read`, `edit` and `rollback` are not registered yet (milestones
+2–5), so `prompt.ts` is provisional.
+
+Breaking surface for anyone who used upstream: tool names `read_file` / `edit_file` / `edit_lines` /
+`safe_delete_symbol` are gone; `registerReplaceSymbolTool(pi, scanner)` and
+`SymbolLocator.getSymbolRange(path, symbol, type?)` changed shape; `stripAnchorPrefixesForDisplay`
+was renamed.

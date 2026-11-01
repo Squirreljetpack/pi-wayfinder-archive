@@ -2,8 +2,8 @@ import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-
 import { getLanguageFromPath, highlightCode, renderDiff } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-const RAW_ANCHOR_PREFIX = /^[A-Z][a-zA-Z]*│/;
-const SYMBOL_ANCHOR_PREFIX = /^(\s*\([^)]*\)\s+)[A-Z][a-zA-Z]*│/;
+const RAW_LINE_NUMBER_PREFIX = /^\d+│/;
+const SYMBOL_LINE_NUMBER_PREFIX = /^(\s*\([^)]*\)\s+)\d+│/;
 
 export interface DiffRenderableDetails {
   diff?: string;
@@ -25,27 +25,19 @@ function replaceTabs(value: string): string {
   return value.replace(/\t/g, "    ");
 }
 
-
 function pathForLanguageDetection(path: string): string {
   return path.replace(/^@/, "").replace(/^(.+):(\d+)(?:-(\d+))?$/, "$1");
 }
 
-function isDisplayMetadataLine(line: string): boolean {
-  return (
-    /^--- .+ ---$/.test(line) ||
-    /^\[(File|Function) Hash: .+\]$/.test(line) ||
-    line === "All Hash Anchors provided below are stable and can be used with edit_file directly."
-  );
-}
-
-export function stripAnchorPrefixesForDisplay(text: string): string {
+/** Drops the model-facing line gutter so humans see plain source. */
+export function stripLineNumbersForDisplay(text: string): string {
   return text
     .split("\n")
-    .filter((line) => !isDisplayMetadataLine(line))
+    .filter((line) => !/^--- .+ ---$/.test(line))
     .map((line) => {
-      const symbolMatch = line.match(SYMBOL_ANCHOR_PREFIX);
-      if (symbolMatch) return line.replace(SYMBOL_ANCHOR_PREFIX, symbolMatch[1]);
-      return line.replace(RAW_ANCHOR_PREFIX, "");
+      const symbolMatch = line.match(SYMBOL_LINE_NUMBER_PREFIX);
+      if (symbolMatch) return line.replace(SYMBOL_LINE_NUMBER_PREFIX, symbolMatch[1]);
+      return line.replace(RAW_LINE_NUMBER_PREFIX, "");
     })
     .join("\n");
 }
@@ -66,13 +58,9 @@ export function renderCodeLikeCall(name: string, paths: string[], theme: Theme, 
 }
 
 function firstPathFromContext(context: RenderContextLike): string | undefined {
-  const args = context.args as { paths?: unknown; path?: unknown; files?: unknown } | undefined;
+  const args = context.args as { paths?: unknown; path?: unknown } | undefined;
   if (Array.isArray(args?.paths)) return String(args.paths[0] || "") || undefined;
   if (typeof args?.path === "string") return args.path;
-  if (Array.isArray(args?.files)) {
-    const first = args.files[0] as { path?: unknown } | undefined;
-    if (typeof first?.path === "string") return first.path;
-  }
   return undefined;
 }
 
@@ -84,7 +72,7 @@ export function renderCodeLikeResult(
 ): Text {
   if (options.isPartial) return new Text(theme.fg("warning", "Running..."), 0, 0);
 
-  const output = stripAnchorPrefixesForDisplay(getTextOutput(result));
+  const output = stripLineNumbersForDisplay(getTextOutput(result));
   const rawPath = firstPathFromContext(context);
   const lang = rawPath ? getLanguageFromPath(pathForLanguageDetection(rawPath)) : undefined;
   const renderedLines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n").map((line) => theme.fg("toolOutput", replaceTabs(line)));
@@ -97,47 +85,11 @@ export function renderCodeLikeResult(
   return new Text(text, 0, 0);
 }
 
-export function renderReadFileResult(
-  result: AgentToolResult<unknown>,
-  options: ToolRenderResultOptions,
-  theme: Theme,
-  context: RenderContextLike,
-): Container | Text {
-  if (options.isPartial) return new Text(theme.fg("warning", "Running..."), 0, 0);
-
-  const args = context.args as { paths?: unknown } | undefined;
-  const paths = Array.isArray(args?.paths) ? args.paths : [];
-  const sections = paths.length > 1 ? parseFileSections(getTextOutput(result)) : [];
-  if (sections.length > 1) {
-    const component = new Container();
-    addTitledPanels(
-      component,
-      sections.map((section) => ({
-        title: shortenDisplayPath(section.path),
-        lines: renderSourceLines(section.path, section.lines, theme)
-      })),
-      theme,
-      options.expanded,
-    );
-    return component;
-  }
-
-  if (paths.length === 1) {
-    const component = new Container();
-    component.addChild(new Spacer(1));
-    component.addChild(renderCodeLikeResult(result, options, theme, context));
-    return component;
-  }
-
-  return renderCodeLikeResult(result, options, theme, context);
-}
-
-
 class TitledPanel {
   constructor(
     private readonly title: string,
     private readonly lines: string[],
-    private readonly theme: Theme
+    private readonly theme: Theme,
   ) {}
 
   invalidate(): void {}
@@ -162,43 +114,6 @@ class TitledPanel {
   }
 }
 
-interface FileSection {
-  path: string;
-  lines: string[];
-}
-
-function trimTrailingEmptyLines(lines: string[]): string[] {
-  const next = [...lines];
-  while (next.length > 0 && next[next.length - 1] === "") next.pop();
-  return next;
-}
-
-function parseFileSections(text: string): FileSection[] {
-  const sections: FileSection[] = [];
-  let current: FileSection | undefined;
-
-  for (const line of text.split("\n")) {
-    const header = line.match(/^--- (.+) ---$/);
-    if (header) {
-      if (current) sections.push({ ...current, lines: trimTrailingEmptyLines(current.lines) });
-      current = { path: header[1], lines: [] };
-      continue;
-    }
-
-    if (!current || /^\[File Hash: .+\]$/.test(line)) continue;
-    current.lines.push(stripAnchorPrefixesForDisplay(line));
-  }
-
-  if (current) sections.push({ ...current, lines: trimTrailingEmptyLines(current.lines) });
-  return sections;
-}
-
-function renderSourceLines(path: string, lines: string[], theme: Theme): string[] {
-  const text = replaceTabs(lines.join("\n"));
-  const lang = getLanguageFromPath(pathForLanguageDetection(path));
-  return lang ? highlightCode(text, lang) : text.split("\n").map((line) => theme.fg("toolOutput", line));
-}
-
 function panelDisplayLines(lines: string[], expanded: boolean): string[] {
   if (expanded || lines.length <= 10) return lines;
   const visibleLines = lines.slice(0, 10);
@@ -218,8 +133,6 @@ function addTitledPanels(
     component.addChild(new TitledPanel(panel.title, lines, theme));
   }
 }
-
-
 
 export function renderDiffResult(
   result: AgentToolResult<DiffRenderableDetails>,

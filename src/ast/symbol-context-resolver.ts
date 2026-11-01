@@ -1,4 +1,4 @@
-import { formatLineWithHash } from "../anchors/line-hashing.js";
+import { formatNumberedLine } from "../tools/line-numbers.js";
 import Parser, { type QueryCapture, type SyntaxNode } from "web-tree-sitter";
 
 export interface SymbolContextResolverOptions {
@@ -6,7 +6,6 @@ export interface SymbolContextResolverOptions {
   fileContent: string;
   parser: Parser;
   ext: string;
-  anchors: string[];
   maxContextLines?: number;
   rootNode?: SyntaxNode;
 }
@@ -32,7 +31,6 @@ export class SymbolContextResolver {
       fileContent,
       parser,
       ext,
-      anchors,
       maxContextLines = SymbolContextResolver.MAX_CONTEXT_LINES,
       rootNode: providedRootNode,
     } = options;
@@ -55,7 +53,7 @@ export class SymbolContextResolver {
       );
       const classContext = SymbolContextResolver.getClassContext(node, captures, memberPropertyNames, queryStrings);
 
-      return SymbolContextResolver.assembleContext(relevantImports, classContext, fileContent, anchors, maxContextLines);
+      return SymbolContextResolver.assembleContext(relevantImports, classContext, fileContent, maxContextLines);
     } catch {
       return "";
     }
@@ -263,37 +261,36 @@ export class SymbolContextResolver {
     imports: SyntaxNode[],
     classContext: { classNode: SyntaxNode; propertyNodes: SyntaxNode[] } | null,
     fileContent: string,
-    anchors: string[],
     maxLines: number,
   ): string {
-    const lines: { text: string; anchorIdx: number }[] = [];
+    const lines: { text: string; lineIndex: number }[] = [];
     const fileLines = fileContent.split(/\r?\n/);
 
     for (const imp of imports) {
       const start = imp.startPosition.row;
       const end = imp.endPosition.row;
       for (let i = start; i <= end; i++) {
-        if (fileLines[i] !== undefined) lines.push({ text: fileLines[i], anchorIdx: i });
+        if (fileLines[i] !== undefined) lines.push({ text: fileLines[i], lineIndex: i });
       }
     }
 
     if (classContext) {
       const { classNode, propertyNodes } = classContext;
       const classStart = classNode.startPosition.row;
-      if (fileLines[classStart] !== undefined) lines.push({ text: fileLines[classStart], anchorIdx: classStart });
+      if (fileLines[classStart] !== undefined) lines.push({ text: fileLines[classStart], lineIndex: classStart });
 
       for (const prop of propertyNodes) {
         const start = prop.startPosition.row;
         const end = prop.endPosition.row;
         for (let i = start; i <= end; i++) {
-          if (fileLines[i] !== undefined) lines.push({ text: fileLines[i], anchorIdx: i });
+          if (fileLines[i] !== undefined) lines.push({ text: fileLines[i], lineIndex: i });
         }
       }
     }
 
     const sortedLines = lines
-      .sort((a, b) => a.anchorIdx - b.anchorIdx)
-      .filter((line, index, self) => index === 0 || line.anchorIdx !== self[index - 1].anchorIdx);
+      .sort((a, b) => a.lineIndex - b.lineIndex)
+      .filter((line, index, self) => index === 0 || line.lineIndex !== self[index - 1].lineIndex);
 
     if (sortedLines.length === 0) return "";
 
@@ -303,9 +300,9 @@ export class SymbolContextResolver {
 
     for (const line of sortedLines) {
       if (linesCount >= maxLines) break;
-      if (lastLineIdx !== -1 && line.anchorIdx > lastLineIdx + 1) result += "...\n";
-      result += `${formatLineWithHash(line.text, anchors[line.anchorIdx])}\n`;
-      lastLineIdx = line.anchorIdx;
+      if (lastLineIdx !== -1 && line.lineIndex > lastLineIdx + 1) result += "...\n";
+      result += `${formatNumberedLine(line.lineIndex + 1, line.text)}\n`;
+      lastLineIdx = line.lineIndex;
       linesCount++;
     }
 

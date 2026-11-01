@@ -2,11 +2,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import type { AnchorStateManager } from "../anchors/AnchorStateManager.js";
-import { stripHashes } from "../anchors/line-hashing.js";
-import { ASTAnchorBridge, type SymbolRange } from "../ast/ast-anchor-bridge.js";
+import { SymbolLocator, type SymbolRange } from "../ast/symbol-locator.js";
 import { combineDiffs, createUnifiedDiff, type DiffDetails } from "../rendering/diff-output.js";
 import { renderCodeLikeCall, renderDiffResult } from "../rendering/pi-renderers.js";
+import { stripLineNumbers } from "./line-numbers.js";
 import { InsertSymbolSchema } from "./schemas.js";
 
 export type InsertPosition = "before" | "after";
@@ -35,7 +34,7 @@ export function detectLineEnding(content: string): "\r\n" | "\n" {
 }
 
 export function normalizeInsertionText(text: string, lineEnding: "\r\n" | "\n"): string {
-  const normalized = stripHashes(text).replace(/\r\n|\r|\n/g, lineEnding);
+  const normalized = stripLineNumbers(text).replace(/\r\n|\r|\n/g, lineEnding);
   return normalized.replace(/\s+$/g, "");
 }
 
@@ -50,7 +49,6 @@ function missingSymbolMessage(insertion: SymbolInsertion): string {
 export interface PreparedFileInsertionBatch {
   batch: FileInsertionBatch;
   finalContent: string;
-  finalLines: string[];
   diff: DiffDetails;
 }
 
@@ -122,7 +120,7 @@ export function applyResolvedSymbolInsertions(
   return nextContent;
 }
 
-export function registerInsertSymbolTool(pi: ExtensionAPI, anchors: AnchorStateManager): void {
+export function registerInsertSymbolTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "insert_symbol",
     label: "Insert Symbol",
@@ -131,7 +129,7 @@ export function registerInsertSymbolTool(pi: ExtensionAPI, anchors: AnchorStateM
     promptGuidelines: [
       "Use insert_symbol with position 'before' to add code above a symbol's definition (including its doc comment).",
       "Use insert_symbol with position 'after' to add code below a symbol's definition.",
-      "Provide complete raw code without hash anchors; anchors are stripped if accidentally included.",
+      "Provide complete raw code without line-number prefixes; prefixes are stripped if accidentally included.",
     ],
     parameters: InsertSymbolSchema,
     renderCall(args, theme) {
@@ -165,13 +163,11 @@ export function registerInsertSymbolTool(pi: ExtensionAPI, anchors: AnchorStateM
           throwIfAborted(signal);
           const originalContent = await readFile(batch.absolutePath, { encoding: "utf8", signal });
           const lineEnding = detectLineEnding(originalContent);
-          const originalLines = originalContent.split(/\r?\n/);
-          anchors.reconcile(batch.absolutePath, originalLines);
 
           const resolved: ResolvedSymbolInsertion[] = [];
           for (const insertion of batch.insertions) {
             throwIfAborted(signal);
-            const range = await ASTAnchorBridge.getSymbolRange(batch.absolutePath, insertion.symbol, anchors, insertion.type);
+            const range = await SymbolLocator.getSymbolRange(batch.absolutePath, insertion.symbol, insertion.type);
             if (!range) throw new Error(missingSymbolMessage(insertion));
             resolved.push({ insertion, range });
           }
@@ -181,7 +177,6 @@ export function registerInsertSymbolTool(pi: ExtensionAPI, anchors: AnchorStateM
           preparedBatches.push({
             batch,
             finalContent,
-            finalLines: finalContent.split(/\r?\n/),
             diff: createUnifiedDiff(batch.displayPath, originalContent, finalContent),
           });
         }
@@ -193,12 +188,11 @@ export function registerInsertSymbolTool(pi: ExtensionAPI, anchors: AnchorStateM
           await mkdir(dirname(prepared.batch.absolutePath), { recursive: true });
           throwIfAborted(signal);
           await writeFile(prepared.batch.absolutePath, prepared.finalContent, { encoding: "utf8", signal });
-          anchors.reconcile(prepared.batch.absolutePath, prepared.finalLines);
 
           const labelList = prepared.batch.insertions
             .map((insertion) => `'${insertion.symbol}' (${insertion.position})`)
             .join(", ");
-          summaries.push(`Successfully inserted ${prepared.batch.insertions.length} ${prepared.batch.insertions.length === 1 ? "insertion" : "insertions"} adjacent to ${labelList} in ${prepared.batch.displayPath}. Existing hash anchors are now stale for lines that moved.`);
+          summaries.push(`Successfully inserted ${prepared.batch.insertions.length} ${prepared.batch.insertions.length === 1 ? "insertion" : "insertions"} adjacent to ${labelList} in ${prepared.batch.displayPath}.`);
         }
       });
 

@@ -1,9 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { AnchorStateManager } from "../anchors/AnchorStateManager.js";
-import { contentHash, formatLineWithHash } from "../anchors/line-hashing.js";
-import { ASTAnchorBridge, type GetFunctionsResult } from "../ast/ast-anchor-bridge.js";
+import { SymbolLocator, type GetFunctionsResult } from "../ast/symbol-locator.js";
+import { formatNumberedLine } from "./line-numbers.js";
 import { renderCodeLikeCall, renderCodeLikeResult } from "../rendering/pi-renderers.js";
 import { appendOutputLine, appendTruncationNotice, createOutputAccumulator, throwIfAborted } from "./output-limits.js";
 import { GetFunctionSchema } from "./schemas.js";
@@ -235,18 +234,16 @@ export function getRegexFunction(
   absolutePath: string,
   requestedPath: string,
   name: string,
-  anchors: AnchorStateManager,
 ): string {
   const lines = content.split(/\r?\n/);
-  const lineAnchors = anchors.reconcile(absolutePath, lines);
   const range = findFunctionRange(lines, name);
 
   if (!range) return `${requestedPath}::${name}\nNot found.`;
 
   const [start, end] = range;
   const body = lines.slice(start, end + 1);
-  const formattedBody = body.map((line, offset) => formatLineWithHash(line, lineAnchors[start + offset])).join("\n");
-  return `${requestedPath}::${name}\n[Function Hash: ${contentHash(body.join("\n"))}]\n${formattedBody}`;
+  const formattedBody = body.map((line, offset) => formatNumberedLine(start + offset + 1, line)).join("\n");
+  return `${requestedPath}::${name}\n${formattedBody}`;
 }
 
 function isFallbackAstResult(result: GetFunctionsResult | null): boolean {
@@ -264,15 +261,15 @@ function appendText(output: ReturnType<typeof createOutputAccumulator>, text: st
   }
 }
 
-export function registerGetFunctionTool(pi: ExtensionAPI, anchors: AnchorStateManager): void {
+export function registerGetFunctionTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "get_function",
     label: "Get Function",
-    description: "After get_file_skeleton, extract anchored implementations of the specific named functions/classes needed for the task.",
+    description: "After get_file_skeleton, extract implementations of the specific named functions/classes needed for the task.",
     promptSnippet: "Use get_function after get_file_skeleton to read only the relevant implementations.",
     promptGuidelines: [
       "Prefer get_function after a skeleton has identified the symbols relevant to the task.",
-      "Use read_file only if the needed context is not represented by a symbol or a narrow line range is clearer."
+      "Use read only if the needed context is not represented by a symbol or a narrow line range is clearer."
     ],
     parameters: GetFunctionSchema,
     renderCall(args, theme) {
@@ -296,7 +293,7 @@ export function registerGetFunctionTool(pi: ExtensionAPI, anchors: AnchorStateMa
 
         let astResult: GetFunctionsResult | null = null;
         try {
-          astResult = await ASTAnchorBridge.getFunctions(absolutePath, requestedPath, params.function_names, anchors);
+          astResult = await SymbolLocator.getFunctions(absolutePath, requestedPath, params.function_names);
         } catch {
           astResult = null;
         }
@@ -324,7 +321,7 @@ export function registerGetFunctionTool(pi: ExtensionAPI, anchors: AnchorStateMa
             appendOutputLine(output, "");
           }
 
-          appendText(output, getRegexFunction(content, absolutePath, requestedPath, name, anchors));
+          appendText(output, getRegexFunction(content, absolutePath, requestedPath, name));
           hasOutput = true;
         }
       }

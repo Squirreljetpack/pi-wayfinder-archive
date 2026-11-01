@@ -1,23 +1,21 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { AnchorStateManager } from "../anchors/AnchorStateManager.js";
-import { formatLineWithHash } from "../anchors/line-hashing.js";
-import { ASTAnchorBridge } from "../ast/ast-anchor-bridge.js";
+import { SymbolLocator } from "../ast/symbol-locator.js";
 import { renderCodeLikeCall, renderCodeLikeResult } from "../rendering/pi-renderers.js";
+import { formatNumberedLine } from "./line-numbers.js";
 import { appendOutputLine, appendTruncationNotice, createOutputAccumulator, throwIfAborted } from "./output-limits.js";
 import { GetFileSkeletonSchema } from "./schemas.js";
 
 const DEFINITION_LINE = /^\s*(export\s+)?(default\s+)?(async\s+)?(function\s+\w+|class\s+\w+|const\s+\w+\s*=\s*(async\s*)?(\([^)]*\)|\w+)?\s*=>?|def\s+\w+)/;
 
-function getRegexSkeleton(content: string, absolutePath: string, anchors: AnchorStateManager): string[] {
+function getRegexSkeleton(content: string): string[] {
   const lines = content.split(/\r?\n/);
-  const lineAnchors = anchors.reconcile(absolutePath, lines);
 
   return lines
     .map((line, index) => ({ line, index }))
     .filter(({ line }) => DEFINITION_LINE.test(line))
-    .map(({ line, index }) => formatLineWithHash(line, lineAnchors[index]));
+    .map(({ line, index }) => formatNumberedLine(index + 1, line));
 }
 
 function appendText(output: ReturnType<typeof createOutputAccumulator>, text: string): void {
@@ -27,14 +25,14 @@ function appendText(output: ReturnType<typeof createOutputAccumulator>, text: st
   }
 }
 
-export function registerGetFileSkeletonTool(pi: ExtensionAPI, anchors: AnchorStateManager): void {
+export function registerGetFileSkeletonTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "get_file_skeleton",
     label: "Get File Skeleton",
-    description: "First-pass source exploration: return a compact anchored outline of functions, classes, methods, and exports before reading full files.",
+    description: "First-pass source exploration: return a compact outline of functions, classes, methods, and exports, with line numbers, before reading full files.",
     promptSnippet: "Use get_file_skeleton first when exploring source code so you can choose targeted get_function reads instead of broad file reads.",
     promptGuidelines: [
-      "Call get_file_skeleton before read_file when you need to understand the structure of a source file.",
+      "Call get_file_skeleton before read when you need to understand the structure of a source file.",
       "After reviewing the skeleton, call get_function for the specific symbols that matter."
     ],
     parameters: GetFileSkeletonSchema,
@@ -60,7 +58,7 @@ export function registerGetFileSkeletonTool(pi: ExtensionAPI, anchors: AnchorSta
 
         let astSkeleton: string | null = null;
         try {
-          astSkeleton = await ASTAnchorBridge.getFileSkeleton(absolutePath, anchors);
+          astSkeleton = await SymbolLocator.getFileSkeleton(absolutePath);
         } catch {
           astSkeleton = null;
         }
@@ -73,7 +71,7 @@ export function registerGetFileSkeletonTool(pi: ExtensionAPI, anchors: AnchorSta
         }
 
         const content = await readFile(absolutePath, { encoding: "utf8", signal });
-        const skeleton = getRegexSkeleton(content, absolutePath, anchors);
+        const skeleton = getRegexSkeleton(content);
 
         if (skeleton.length) {
           for (const line of skeleton) {

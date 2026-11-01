@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { readFile, writeFile } from "node:fs/promises";
-import type { AnchorStateManager } from "../anchors/AnchorStateManager.js";
 import { combineDiffs, createUnifiedDiff, type DiffDetails } from "../rendering/diff-output.js";
 import { renderCodeLikeCall, renderDiffResult } from "../rendering/pi-renderers.js";
 import type { SymbolLocation, SymbolScanner } from "../symbols/symbol-scanner.js";
@@ -19,7 +18,6 @@ interface PreparedRenameFile {
   absolutePath: string;
   displayPath: string;
   finalContent: string;
-  finalLines: string[];
   replacementCount: number;
   diff: DiffDetails;
 }
@@ -91,7 +89,7 @@ function groupLocationsByFile(locations: SymbolLocation[]): Map<string, SymbolLo
   return byFile;
 }
 
-export function registerRenameSymbolTool(pi: ExtensionAPI, anchors: AnchorStateManager, scanner: SymbolScanner): void {
+export function registerRenameSymbolTool(pi: ExtensionAPI, scanner: SymbolScanner): void {
   pi.registerTool({
     name: "rename_symbol",
     label: "Rename Symbol",
@@ -148,7 +146,6 @@ export function registerRenameSymbolTool(pi: ExtensionAPI, anchors: AnchorStateM
             absolutePath,
             displayPath,
             finalContent,
-            finalLines: finalContent.split(/\r?\n/),
             replacementCount,
             diff: createUnifiedDiff(displayPath, originalContent, finalContent)
           });
@@ -157,7 +154,6 @@ export function registerRenameSymbolTool(pi: ExtensionAPI, anchors: AnchorStateM
         for (const file of prepared) {
           throwIfAborted(signal);
           await writeFile(file.absolutePath, file.finalContent, { encoding: "utf8", signal });
-          anchors.reconcile(file.absolutePath, file.finalLines);
           scanner.invalidate(file.absolutePath);
         }
 

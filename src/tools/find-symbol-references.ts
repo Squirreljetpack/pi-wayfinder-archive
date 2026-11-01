@@ -1,9 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
-import type { AnchorStateManager } from "../anchors/AnchorStateManager.js";
-import { formatLineWithHash } from "../anchors/line-hashing.js";
 import { renderCodeLikeCall, renderCodeLikeResult } from "../rendering/pi-renderers.js";
 import type { SymbolLocation, SymbolLocationType, SymbolScanner } from "../symbols/symbol-scanner.js";
+import { formatNumberedLine } from "./line-numbers.js";
 import { FindSymbolReferencesSchema } from "./schemas.js";
 
 type FindType = SymbolLocationType | "both";
@@ -27,7 +26,7 @@ function filterLocations(locations: SymbolLocation[], symbols: string[], findTyp
   });
 }
 
-async function formatLocations(locations: SymbolLocation[], anchors: AnchorStateManager): Promise<string> {
+async function formatLocations(locations: SymbolLocation[]): Promise<string> {
   const byFile = new Map<string, SymbolLocation[]>();
   for (const location of locations) {
     const fileLocations = byFile.get(location.absolutePath) || [];
@@ -45,7 +44,6 @@ async function formatLocations(locations: SymbolLocation[], anchors: AnchorState
   for (const [absolutePath, fileLocations] of sortedFiles) {
     const content = await readFile(absolutePath, "utf8");
     const lines = content.split(/\r?\n/);
-    const lineAnchors = anchors.reconcile(absolutePath, lines);
     const merged = new Map<number, Set<string>>();
 
     for (const location of fileLocations.sort((a, b) => a.startLine - b.startLine || a.startColumn - b.startColumn)) {
@@ -57,7 +55,7 @@ async function formatLocations(locations: SymbolLocation[], anchors: AnchorState
     const displayPath = fileLocations[0]?.displayPath || absolutePath;
     output.push(`${displayPath}:`);
     for (const [lineIndex, symbols] of Array.from(merged.entries()).sort((a, b) => a[0] - b[0])) {
-      output.push(`  (${Array.from(symbols).join(", ")}) ${formatLineWithHash(lines[lineIndex], lineAnchors[lineIndex]).trim()}`);
+      output.push(`  (${Array.from(symbols).join(", ")}) ${formatNumberedLine(lineIndex + 1, lines[lineIndex] ?? "").trim()}`);
     }
     output.push("");
   }
@@ -65,12 +63,12 @@ async function formatLocations(locations: SymbolLocation[], anchors: AnchorState
   return output.join("\n").trim();
 }
 
-export function registerFindSymbolReferencesTool(pi: ExtensionAPI, anchors: AnchorStateManager, scanner: SymbolScanner): void {
+export function registerFindSymbolReferencesTool(pi: ExtensionAPI, scanner: SymbolScanner): void {
   pi.registerTool({
     name: "find_symbol_references",
     label: "Find Symbol References",
     description: "Find exact tree-sitter definitions and references for one or more symbols across files or directories.",
-    promptSnippet: "Find exact AST definitions/references of symbols across paths with anchored lines.",
+    promptSnippet: "Find exact AST definitions/references of symbols across paths with line-numbered source lines.",
     promptGuidelines: [
       "Use find_symbol_references before rename_symbol when you need to inspect where a symbol appears.",
       "Use find_symbol_references with narrow paths when possible to avoid broad symbol scans."
@@ -94,7 +92,7 @@ export function registerFindSymbolReferencesTool(pi: ExtensionAPI, anchors: Anch
 
       const locations = await scanner.scanPaths(paths, ctx.cwd, signal);
       const hits = filterLocations(locations, symbols, findType);
-      const text = hits.length > 0 ? await formatLocations(hits, anchors) : missingMessage(findType, symbols);
+      const text = hits.length > 0 ? await formatLocations(hits) : missingMessage(findType, symbols);
 
       return {
         content: [{ type: "text", text }],

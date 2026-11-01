@@ -3,7 +3,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AnchorStateManager } from "../src/anchors/AnchorStateManager.js";
 import { SymbolCache } from "../src/symbols/symbol-cache.js";
 import { SymbolScanner } from "../src/symbols/symbol-scanner.js";
 import { registerFindSymbolReferencesTool } from "../src/tools/find-symbol-references.js";
@@ -25,7 +24,7 @@ function registerToolForTest(): RegisteredTool {
       registeredTool = tool;
     }),
   };
-  registerFindSymbolReferencesTool(pi as unknown as ExtensionAPI, new AnchorStateManager(), new SymbolScanner(new SymbolCache()));
+  registerFindSymbolReferencesTool(pi as unknown as ExtensionAPI, new SymbolScanner(new SymbolCache()));
   expect(registeredTool).toBeDefined();
   expect(registeredTool?.name).toBe("find_symbol_references");
   return registeredTool as RegisteredTool;
@@ -36,7 +35,7 @@ afterEach(async () => {
 });
 
 describe("find_symbol_references tool", () => {
-  it("finds definitions and references by default with hash anchors", async () => {
+  it("finds definitions and references by default with line numbers", async () => {
     const cwd = await createTempDir();
     await writeFile(join(cwd, "sample.ts"), [
       "export function greet(name: string) {",
@@ -51,8 +50,8 @@ describe("find_symbol_references tool", () => {
     const text = result.content[0].text || "";
 
     expect(text).toContain("sample.ts:");
-    expect(text).toMatch(/\(greet\) \w+│export function greet/);
-    expect(text).toMatch(/\(greet\) \w+│const message = greet/);
+    expect(text).toMatch(/\(greet\) 1│export function greet/);
+    expect(text).toMatch(/\(greet\) 4│const message = greet/);
   });
 
   it("filters definitions only and references only", async () => {

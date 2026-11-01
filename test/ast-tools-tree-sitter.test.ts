@@ -3,7 +3,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AnchorStateManager } from "../src/anchors/AnchorStateManager.js";
 import { registerGetFileSkeletonTool } from "../src/tools/get-file-skeleton.js";
 import { registerGetFunctionTool } from "../src/tools/get-function.js";
 
@@ -17,7 +16,7 @@ async function createTempDir(): Promise<string> {
   return dir;
 }
 
-function registerSkeletonToolForTest(anchors = new AnchorStateManager()): RegisteredTool {
+function registerSkeletonToolForTest(): RegisteredTool {
   let registeredTool: RegisteredTool | undefined;
   const pi = {
     registerTool: vi.fn((tool: RegisteredTool) => {
@@ -25,13 +24,13 @@ function registerSkeletonToolForTest(anchors = new AnchorStateManager()): Regist
     }),
   };
 
-  registerGetFileSkeletonTool(pi as unknown as ExtensionAPI, anchors);
+  registerGetFileSkeletonTool(pi as unknown as ExtensionAPI);
 
   expect(registeredTool).toBeDefined();
   return registeredTool as RegisteredTool;
 }
 
-function registerFunctionToolForTest(anchors = new AnchorStateManager()): RegisteredTool {
+function registerFunctionToolForTest(): RegisteredTool {
   let registeredTool: RegisteredTool | undefined;
   const pi = {
     registerTool: vi.fn((tool: RegisteredTool) => {
@@ -39,7 +38,7 @@ function registerFunctionToolForTest(anchors = new AnchorStateManager()): Regist
     }),
   };
 
-  registerGetFunctionTool(pi as unknown as ExtensionAPI, anchors);
+  registerGetFunctionTool(pi as unknown as ExtensionAPI);
 
   expect(registeredTool).toBeDefined();
   return registeredTool as RegisteredTool;
@@ -68,9 +67,9 @@ describe("tree-sitter AST read tool integration", () => {
     const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
     expect(text).toContain("--- sample.ts ---");
-    expect(text).toContain("WayA│class Service {");
-    expect(text).toContain("WayB│  run() {");
-    expect(text).toContain("WayG│const helper = () => 2;");
+    expect(text).toContain("1│class Service {");
+    expect(text).toContain("2│  run() {");
+    expect(text).toContain("7│const helper = () => 2;");
     expect(text).not.toContain("return 1;");
   });
 
@@ -98,9 +97,9 @@ describe("tree-sitter AST read tool integration", () => {
     const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
     expect(text).toContain("sample.ts::Service.run");
-    expect(text).toContain("WayB│  run() {");
-    expect(text).toContain("WayC│    return 1;");
-    expect(text).toContain("WayD│  }");
+    expect(text).toContain("2│  run() {");
+    expect(text).toContain("3│    return 1;");
+    expect(text).toContain("4│  }");
     expect(text).not.toContain("const helper = () => 2;");
   });
 
@@ -122,9 +121,9 @@ describe("tree-sitter AST read tool integration", () => {
     const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
     expect(text).toContain("--- sample.js ---");
-    expect(text).toContain("WayA│class Service {");
-    expect(text).toContain("WayB│  run() {");
-    expect(text).toContain("WayG│const helper = () => 2;");
+    expect(text).toContain("1│class Service {");
+    expect(text).toContain("2│  run() {");
+    expect(text).toContain("7│const helper = () => 2;");
     expect(text).not.toContain("return 1;");
   });
 
@@ -152,9 +151,9 @@ describe("tree-sitter AST read tool integration", () => {
     const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
     expect(text).toContain("sample.js::Service.run");
-    expect(text).toContain("WayB│  run() {");
-    expect(text).toContain("WayC│    return 1;");
-    expect(text).toContain("WayD│  }");
+    expect(text).toContain("2│  run() {");
+    expect(text).toContain("3│    return 1;");
+    expect(text).toContain("4│  }");
     expect(text).not.toContain("const helper = () => 2;");
   });
 });

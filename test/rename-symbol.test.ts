@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AnchorStateManager } from "../src/anchors/AnchorStateManager.js";
 import { SymbolCache } from "../src/symbols/symbol-cache.js";
 import { SymbolScanner } from "../src/symbols/symbol-scanner.js";
 import { applySymbolRenameToContent, registerRenameSymbolTool, type RenameLocation } from "../src/tools/rename-symbol.js";
@@ -25,7 +24,7 @@ function registerToolForTest(scanner = new SymbolScanner(new SymbolCache())): Re
       registeredTool = tool;
     }),
   };
-  registerRenameSymbolTool(pi as unknown as ExtensionAPI, new AnchorStateManager(), scanner);
+  registerRenameSymbolTool(pi as unknown as ExtensionAPI, scanner);
   expect(registeredTool).toBeDefined();
   expect(registeredTool?.name).toBe("rename_symbol");
   return registeredTool as RegisteredTool;

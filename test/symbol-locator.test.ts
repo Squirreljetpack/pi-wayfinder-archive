@@ -2,23 +2,21 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AnchorStateManager } from "../src/anchors/AnchorStateManager.js";
-import { contentHash } from "../src/anchors/line-hashing.js";
-import { ASTAnchorBridge } from "../src/ast/ast-anchor-bridge.js";
+import { SymbolLocator } from "../src/ast/symbol-locator.js";
 
 const tempDirs: string[] = [];
 async function createTempDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "pi-wayfinder-bridge-"));
+  const dir = await mkdtemp(join(tmpdir(), "pi-wayfinder-locator-"));
   tempDirs.push(dir);
   return dir;
 }
 
-describe("ASTAnchorBridge", () => {
+describe("SymbolLocator", () => {
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
-  it("returns anchored skeleton lines from tree-sitter definitions", async () => {
+  it("returns numbered skeleton lines from tree-sitter definitions", async () => {
     const cwd = await createTempDir();
     const filePath = join(cwd, "sample.ts");
     await writeFile(filePath, [
@@ -28,12 +26,12 @@ describe("ASTAnchorBridge", () => {
       "export const helper = () => 2;"
     ].join("\n"), "utf8");
 
-    const text = await ASTAnchorBridge.getFileSkeleton(filePath, new AnchorStateManager());
+    const text = await SymbolLocator.getFileSkeleton(filePath);
 
     expect(text).toContain("|----");
-    expect(text).toContain("WayA│export class Service {");
-    expect(text).toContain("WayB│  run() { return 1; }");
-    expect(text).toContain("WayD│export const helper = () => 2;");
+    expect(text).toContain("1│export class Service {");
+    expect(text).toContain("2│  run() { return 1; }");
+    expect(text).toContain("4│export const helper = () => 2;");
   });
 
   it("extracts nested method implementations by suffix name", async () => {
@@ -49,14 +47,13 @@ describe("ASTAnchorBridge", () => {
       "}"
     ].join("\n"), "utf8");
 
-    const result = await ASTAnchorBridge.getFunctions(filePath, "sample.ts", ["run"], new AnchorStateManager());
+    const result = await SymbolLocator.getFunctions(filePath, "sample.ts", ["run"]);
 
     expect(result?.foundNames).toEqual(["run"]);
     expect(result?.formattedContent).toContain("sample.ts::Service.run");
-    expect(result?.formattedContent).toContain("[Function Hash:");
-    expect(result?.formattedContent).toContain("WayD│  run() {");
-    expect(result?.formattedContent).toContain("WayE│    return dep(this.value);");
-    expect(result?.formattedContent).toContain("WayF│  }");
+    expect(result?.formattedContent).toContain("4│  run() {");
+    expect(result?.formattedContent).toContain("5│    return dep(this.value);");
+    expect(result?.formattedContent).toContain("6│  }");
   });
 
   it("includes adjacent comments/decorators in extended ranges", async () => {
@@ -69,31 +66,27 @@ describe("ASTAnchorBridge", () => {
       "}"
     ].join("\n"), "utf8");
 
-    const result = await ASTAnchorBridge.getFunctions(filePath, "sample.ts", ["helper"], new AnchorStateManager());
+    const result = await SymbolLocator.getFunctions(filePath, "sample.ts", ["helper"]);
 
-    expect(result?.formattedContent).toContain("WayA│/** Docs for helper */");
-    expect(result?.formattedContent).toContain("WayB│export function helper() {");
+    expect(result?.formattedContent).toContain("1│/** Docs for helper */");
+    expect(result?.formattedContent).toContain("2│export function helper() {");
   });
 
-  it("does not include non-adjacent previous comments in function ranges or hashes", async () => {
+  it("does not include non-adjacent previous comments in function ranges", async () => {
     const cwd = await createTempDir();
     const filePath = join(cwd, "sample.ts");
-    const functionText = [
-      "export function helper() {",
-      "  return 1;",
-      "}"
-    ].join("\n");
     await writeFile(filePath, [
       "// Detached docs",
       "",
-      functionText
+      "export function helper() {",
+      "  return 1;",
+      "}"
     ].join("\n"), "utf8");
 
-    const result = await ASTAnchorBridge.getFunctions(filePath, "sample.ts", ["helper"], new AnchorStateManager());
+    const result = await SymbolLocator.getFunctions(filePath, "sample.ts", ["helper"]);
 
-    expect(result?.formattedContent).not.toContain("WayA│// Detached docs");
-    expect(result?.formattedContent).toContain("WayC│export function helper() {");
-    expect(result?.formattedContent).toContain(`[Function Hash: ${contentHash(functionText)}]`);
+    expect(result?.formattedContent).not.toContain("1│// Detached docs");
+    expect(result?.formattedContent).toContain("3│export function helper() {");
   });
 
   it("adds class property context only for this/self member usage and avoids unrelated imports", async () => {
@@ -113,12 +106,12 @@ describe("ASTAnchorBridge", () => {
       "}"
     ].join("\n"), "utf8");
 
-    const result = await ASTAnchorBridge.getFunctions(filePath, "sample.ts", ["run"], new AnchorStateManager());
+    const result = await SymbolLocator.getFunctions(filePath, "sample.ts", ["run"]);
 
-    expect(result?.formattedContent).toContain("WayA│import { dep } from './dep';");
-    expect(result?.formattedContent).not.toContain("WayB│import { unused } from './used';");
-    expect(result?.formattedContent).toContain("WayE│  used = 1;");
-    expect(result?.formattedContent).not.toContain("WayF│  value = 2;");
+    expect(result?.formattedContent).toContain("1│import { dep } from './dep';");
+    expect(result?.formattedContent).not.toContain("2│import { unused } from './used';");
+    expect(result?.formattedContent).toContain("5│  used = 1;");
+    expect(result?.formattedContent).not.toContain("6│  value = 2;");
   });
 
   it("does not duplicate target class fields while collecting context", async () => {
@@ -131,11 +124,11 @@ describe("ASTAnchorBridge", () => {
       "}"
     ].join("\n"), "utf8");
 
-    const result = await ASTAnchorBridge.getFunctions(filePath, "sample.ts", ["run"], new AnchorStateManager());
+    const result = await SymbolLocator.getFunctions(filePath, "sample.ts", ["run"]);
     const marker = "│  run = () => this.used";
 
     expect(result?.formattedContent.split(marker).length).toBe(2);
-    expect(result?.formattedContent).toContain("WayC│  used = 1;");
+    expect(result?.formattedContent).toContain("3│  used = 1;");
   });
 
   it("returns symbol ranges with adjacent comments, nameText, and no detached comments", async () => {
@@ -157,9 +150,8 @@ describe("ASTAnchorBridge", () => {
     ].join("\n");
     await writeFile(filePath, source, "utf8");
 
-    const anchors = new AnchorStateManager();
-    const methodRange = await ASTAnchorBridge.getSymbolRange(filePath, "run", anchors, "method");
-    const functionRange = await ASTAnchorBridge.getSymbolRange(filePath, "helper", anchors, "function");
+    const methodRange = await SymbolLocator.getSymbolRange(filePath, "run", "method");
+    const functionRange = await SymbolLocator.getSymbolRange(filePath, "helper", "function");
 
     expect(methodRange?.nameText).toBe("run");
     expect(methodRange && source.slice(methodRange.startIndex, methodRange.endIndex)).toContain("  // method docs");

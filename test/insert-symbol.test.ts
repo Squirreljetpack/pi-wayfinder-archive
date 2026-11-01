@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AnchorStateManager } from "../src/anchors/AnchorStateManager.js";
 import {
   applyResolvedSymbolInsertions,
   groupInsertionsByPath,
@@ -23,7 +22,7 @@ async function createTempDir(): Promise<string> {
   return dir;
 }
 
-function registerToolForTest(anchors = new AnchorStateManager()): RegisteredTool {
+function registerToolForTest(): RegisteredTool {
   let registeredTool: RegisteredTool | undefined;
   const pi = {
     registerTool: vi.fn((tool: RegisteredTool) => {
@@ -31,7 +30,7 @@ function registerToolForTest(anchors = new AnchorStateManager()): RegisteredTool
     }),
   };
 
-  registerInsertSymbolTool(pi as unknown as ExtensionAPI, anchors);
+  registerInsertSymbolTool(pi as unknown as ExtensionAPI);
 
   expect(registeredTool).toBeDefined();
   expect(registeredTool?.name).toBe("insert_symbol");
@@ -53,8 +52,8 @@ describe("insert_symbol pure helpers", () => {
     expect(insertionText(insertion, "\n")).toBe("\nexport function helper() {}");
   });
 
-  it("strips hash anchors and normalizes EOL to the target", () => {
-    const insertion: SymbolInsertion = { path: "a.ts", symbol: "target", position: "before", text: "Apple│export function helper() {\r\nBerry│}\r\n" };
+  it("strips line numbers and normalizes EOL to the target", () => {
+    const insertion: SymbolInsertion = { path: "a.ts", symbol: "target", position: "before", text: "1│export function helper() {\r\n2│}\r\n" };
     expect(insertionText(insertion, "\n")).toBe("export function helper() {\n}\n");
   });
 
