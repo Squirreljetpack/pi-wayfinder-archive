@@ -198,9 +198,10 @@ export async function recentTransactionIds(cwd: string, limit = 5): Promise<stri
 
 async function prune(db: import("node:sqlite").DatabaseSync): Promise<void> {
   try {
-    db.prepare(
-      "DELETE FROM txn WHERE rowid <= (SELECT rowid FROM txn ORDER BY rowid DESC LIMIT 1 OFFSET ?)",
-    ).run(MAX_TRANSACTIONS);
+    const deleted = db
+      .prepare("DELETE FROM txn WHERE rowid <= (SELECT rowid FROM txn ORDER BY rowid DESC LIMIT 1 OFFSET ?)")
+      .run(MAX_TRANSACTIONS);
+    if (Number(deleted.changes) === 0) return;
 
     const pageSize = (db.prepare("PRAGMA page_size").get() as unknown as { page_size: number }).page_size;
     const pageCount = (db.prepare("PRAGMA page_count").get() as unknown as { page_count: number }).page_count;

@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readFile, writeFile } from "node:fs/promises";
 import { appendTransaction, getTransaction, recentTransactionIds } from "./db.js";
-import { sha256 } from "../edit/snapshot.js";
+import { sha256, withFileMutationQueues } from "../edit/snapshot.js";
 import { combineDiffs, createPiDiff, type DiffDetails } from "../rendering/diff-output.js";
 import { renderCodeLikeCall, renderDiffResult } from "../rendering/pi-renderers.js";
 import { RollbackSchema } from "../tools/schemas.js";
@@ -100,9 +100,14 @@ export function registerRollbackTool(pi: ExtensionAPI): void {
         diffs.push({ path: change.path, ...createPiDiff(before, after) });
       }
 
-      for (const { change } of current) {
-        await writeFile(change.absolutePath, change.before);
-      }
+      await withFileMutationQueues(
+        current.map(({ change }) => change.absolutePath),
+        async () => {
+          for (const { change } of current) {
+            await writeFile(change.absolutePath, change.before);
+          }
+        },
+      );
 
       const fileLabel = transaction.changes.length === 1 ? "file" : "files";
       const text = [

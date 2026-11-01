@@ -1,9 +1,16 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { applyRanges } from "./apply.js";
 import { normalizeEditArguments } from "./shims.js";
 import { resolveEdit, validateEdit, type EditSpec } from "./resolve.js";
-import { readSnapshot, restoreSnapshot, serializeSnapshot, sha256, writeSnapshot, type TextSnapshot } from "./snapshot.js";
+import {
+  readSnapshot,
+  restoreSnapshot,
+  serializeSnapshot,
+  sha256,
+  withFileMutationQueues,
+  writeSnapshot,
+  type TextSnapshot,
+} from "./snapshot.js";
 import { appendTransaction } from "../history/db.js";
 import { expandPath } from "../read/paths.js";
 import {
@@ -53,15 +60,6 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function withFileMutationQueues<T>(absolutePaths: string[], fn: () => Promise<T>): Promise<T> {
-  const uniquePaths = Array.from(new Set(absolutePaths)).sort();
-  const run = async (index: number): Promise<T> => {
-    if (index >= uniquePaths.length) return fn();
-    return withFileMutationQueue(uniquePaths[index], () => run(index + 1));
-  };
-  return run(0);
 }
 
 export function groupEdits(edits: EditSpec[], cwd: string): EditGroup[] {

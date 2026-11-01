@@ -1,3 +1,4 @@
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -104,4 +105,17 @@ export async function writeSnapshot(snapshot: TextSnapshot, text: string, signal
   }
 
   await rename(tempPath, snapshot.absolutePath);
+}
+
+/**
+ * Acquires pi's per-file mutation queues in sorted order, so several files can be held for the
+ * duration of one transaction without two callers deadlocking on each other.
+ */
+export async function withFileMutationQueues<T>(absolutePaths: string[], fn: () => Promise<T>): Promise<T> {
+  const uniquePaths = Array.from(new Set(absolutePaths)).sort();
+  const run = async (index: number): Promise<T> => {
+    if (index >= uniquePaths.length) return fn();
+    return withFileMutationQueue(uniquePaths[index], () => run(index + 1));
+  };
+  return run(0);
 }

@@ -74,6 +74,16 @@ describe("read tool", () => {
     expect(text).toContain("[5 more lines in file. Use offset=6 to continue.]");
   });
 
+  it("does not leak carriage returns from CRLF files into the gutter output", async () => {
+    const cwd = await createTempDir();
+    await writeFile(join(cwd, "win.txt"), "one\r\ntwo\r\n", "utf8");
+
+    const tool = registerToolForTest();
+    const text = textOf(await tool.execute("call-crlf", { path: "win.txt" }, undefined, undefined, { cwd } as never));
+
+    expect(text).toBe("1│one\n2│two");
+  });
+
   it("rejects an offset past the end of the file", async () => {
     const cwd = await createTempDir();
     await writeFile(join(cwd, "sample.txt"), "only\n", "utf8");

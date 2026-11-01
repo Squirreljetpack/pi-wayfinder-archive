@@ -36,7 +36,11 @@ function numberLines(content: string, startLineDisplay: number): string {
   if (content.length === 0) return "";
   const lines = content.split("\n");
   if (content.endsWith("\n")) lines.pop();
-  return lines.map((line, index) => formatNumberedLine(startLineDisplay + index, line)).join("\n");
+  // CRLF files would otherwise show a trailing "\r" on every line, which models then copy into
+  // edit payloads. The gutter already delimits lines, so the carriage return carries no content.
+  return lines
+    .map((line, index) => formatNumberedLine(startLineDisplay + index, line.endsWith("\r") ? line.slice(0, -1) : line))
+    .join("\n");
 }
 
 /**
