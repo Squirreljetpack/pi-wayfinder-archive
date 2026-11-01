@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getWayfinderPromptGuidance } from "./prompt.js";
+import { registerReadTool } from "./read/tool.js";
 import { SymbolCache } from "./symbols/symbol-cache.js";
 import { SymbolScanner } from "./symbols/symbol-scanner.js";
 import { registerFindSymbolReferencesTool } from "./tools/find-symbol-references.js";
@@ -13,6 +14,7 @@ export default function wayfinderExtension(pi: ExtensionAPI): void {
 	const symbolCache = new SymbolCache();
 	const symbolScanner = new SymbolScanner(symbolCache);
 
+	registerReadTool(pi);
 	registerGetFileSkeletonTool(pi);
 	registerGetFunctionTool(pi);
 	registerReplaceSymbolTool(pi, symbolScanner);

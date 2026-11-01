@@ -454,3 +454,37 @@ Breaking surface for anyone who used upstream: tool names `read_file` / `edit_fi
 `safe_delete_symbol` are gone; `registerReplaceSymbolTool(pi, scanner)` and
 `SymbolLocator.getSymbolRange(path, symbol, type?)` changed shape; `stripAnchorPrefixesForDisplay`
 was renamed.
+
+### Milestone 2 — numbered `read` (done)
+
+- `src/read/tool.ts` registers a tool literally named `read`, spreading pi's own
+  `createReadToolDefinition(cwd)` for schema, description plumbing, `outputSchema`,
+  `renderCall` and `renderResult`, then overriding `execute`.
+- Live check in a scratch dir: pi loads the fork with no name-conflict error, the prompt's
+  `<tools>` block contains exactly one `read`, and our guideline ("Every line of read output
+  starts with its line number…") shows up in `<rules>` — so the builtin is genuinely replaced
+  (`_refreshToolRegistry` writes extension tools over builtins, as read earlier).
+- Text path mirrors pi's byte-for-byte semantics (offset bounds error, `limit` short-circuit,
+  `truncateHead`, `firstLineExceedsLimit` bash hint, both continuation notices) and only adds the
+  gutter. Numbers stay absolute under `offset`; a trailing newline does not produce a phantom
+  numbered line; empty files stay empty.
+- Images delegate to the builtin definition after a magic-byte sniff (PNG/JPEG/GIF/WEBP/BMP), so
+  attachments, resize hints and non-vision notices are pi's own. Other binaries get a one-line
+  `[Binary file (4KB), not shown: …]` notice instead of 50KB of mojibake — deliberately better
+  than the builtin, which decodes them as text.
+- `renderResult` strips the gutter before handing off to pi's renderer, so the TUI looks exactly
+  like upstream `read`.
+- `src/read/paths.ts` reimplements pi's `resolveToCwd` (unicode-space normalisation, `@` strip,
+  `~` expansion) plus an NFD fallback. The macOS AM/PM narrow-space and curly-quote filename
+  variants are **not** replicated — dead on Linux, and a two-`stat` tax on every read otherwise.
+
+Notes:
+
+- 109 tests, typecheck clean. `read` covered by `test/read.test.ts` (gutter, offset numbering,
+  continuation notices, both path forms, binary notice, image delegation, renderer de-guttering).
+- An end-to-end `pi -p` smoke run could not be completed: the configured models are not reachable
+  from this environment (`Model "…" not found`), so tool-call round-trips are deferred to
+  milestone 7. Registration itself is verified live (above).
+- Upstream `pi-wayfinder` is still installed globally; pi refuses to load two extensions that
+  register the same tool names, so the fork and upstream cannot coexist in one config. Worth a
+  README line, not a code change.
