@@ -1,0 +1,68 @@
+ike wayfinder i believe it doesn't involve lsp, only treesitter
+
+get_file_skeleton
+get_function
+
+replace_symbol
+rename_symbol
+find_symbol_references
+
+# secondary tools (only if easily implementable with treesitter)
+insert_before_symbol
+replace_symbol_body
+
+edit(edits, expected_matches)
+    ├── Resolve all target files
+    ├── Validate every match count
+    ├── Reject overlapping edits
+    ├── Apply edits to in-memory snapshots
+    ├── Persist rollback snapshots
+    ├── Write all modified files
+    └── Return transaction ID + counts + diff
+
+history:
+- size cap
+- automatic compaction
+
+rollback(transaction_id)
+    ├── Load transaction
+    ├── Verify affected files haven't changed unexpectedly
+    ├── Restore the pre-edit snapshots
+    └── Report the rollback result
+
+type Edit = {
+  path: string;
+  expected_matches: number;
+} & (
+  | {
+      mode: "exact";
+      old: string;
+      new: string;
+    }
+  | {
+      mode: "between";
+      start: string;
+      end: string;
+      new: string;
+      include_delimiters?: boolean;
+    }
+);
+{
+  "path": "src/foo.rs",
+  "mode": "exact",
+  "old": "let count = 0;",
+  "new": "let count = 1;",
+  "expected_matches": 1
+}
+{
+  "path": "src/foo.rs",
+  "mode": "between",
+  "start": "fn process() {",
+  "end": "\n    fn next()",
+  "new": "fn process() {\n    do_something();\n}",
+  "expected_matches": 1,
+  "include_delimiters": false
+}
+
+Other features
+atomic writes
