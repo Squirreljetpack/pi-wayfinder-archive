@@ -584,3 +584,16 @@ An end-to-end tool-call round trip is still blocked: this environment's configur
 reachable (`Model "…" not found`), so no model ever emits a tool call here. The remaining check is
 `pi -e .` in a scratch repo with a working model: one `edit` across two files, a `between` edit, and
 a `rollback`.
+
+### Post-milestone review fixes
+
+- `rollback` now restores under the same per-file mutation queues as `edit` (a `rollback` and an
+  `edit` can land in one parallel tool batch); the queue helper moved to `edit/snapshot.ts`.
+- Retention skips the checkpoint/vacuum when nothing was pruned, so the common edit pays one
+  `DELETE` probe instead of a WAL checkpoint.
+- `read` drops the `\r` a CRLF file would otherwise leave at the end of every numbered line; models
+  were copying it into `edit` payloads.
+- Regression tests added for: the same exact edit twice in one call (must be an overlap error, not a
+  double apply), BOM+CRLF with a pasted gutter in `lines` mode, and rollback of a file deleted after
+  the edit (drift → refuse, `force` → recreate).
+- Totals: 159 tests, typecheck clean.

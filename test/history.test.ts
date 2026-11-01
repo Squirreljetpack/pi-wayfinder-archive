@@ -203,3 +203,30 @@ describe("rollback tool", () => {
     );
   });
 });
+
+describe("rollback edge cases", () => {
+  it("treats a deleted file as drift and can recreate it when forced", async () => {
+    const cwd = await createTempDir();
+    const filePath = join(cwd, "a.ts");
+    await writeFile(filePath, "one\n", "utf8");
+
+    const edited = await editTool().execute(
+      "call-edit",
+      { edits: [{ path: "a.ts", mode: "exact", old: "one", new: "two" }] },
+      undefined,
+      undefined,
+      { cwd } as never,
+    );
+    const transactionId = (edited.details as { transactionId: string }).transactionId;
+    await rm(filePath);
+
+    await expect(
+      rollbackTool().execute("call-rb", { transaction_id: transactionId }, undefined, undefined, { cwd } as never),
+    ).rejects.toThrow(/a\.ts: missing/);
+
+    await rollbackTool().execute("call-force", { transaction_id: transactionId, force: true }, undefined, undefined, {
+      cwd,
+    } as never);
+    await expect(readFile(filePath, "utf8")).resolves.toBe("one\n");
+  });
+});

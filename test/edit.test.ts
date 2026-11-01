@@ -398,3 +398,42 @@ describe("edit argument shims", () => {
     await expect(readFile(join(cwd, "a.ts"), "utf8")).resolves.toBe("const a = 2;\n");
   });
 });
+
+describe("edit regressions", () => {
+  it("rejects the same exact edit twice instead of applying it twice", async () => {
+    const cwd = await createTempDir();
+    await writeFile(join(cwd, "a.ts"), "const a = 1;\n", "utf8");
+
+    const call = registerToolForTest().execute(
+      "call-dup",
+      {
+        edits: [
+          { path: "a.ts", mode: "exact", old: "const a = 1;", new: "const a = 2;" },
+          { path: "a.ts", mode: "exact", old: "const a = 1;", new: "const a = 3;" },
+        ],
+      },
+      undefined,
+      undefined,
+      { cwd } as never,
+    );
+
+    await expect(call).rejects.toThrow(/Overlapping edits/);
+    await expect(readFile(join(cwd, "a.ts"), "utf8")).resolves.toBe("const a = 1;\n");
+  });
+
+  it("keeps BOM and CRLF when the replacement text carries a pasted gutter", async () => {
+    const cwd = await createTempDir();
+    const filePath = join(cwd, "a.ts");
+    await writeFile(filePath, "\uFEFFone\r\ntwo\r\n", "utf8");
+
+    await registerToolForTest().execute(
+      "call-bom",
+      { edits: [{ path: "a.ts", mode: "lines", start_line: 2, end_line: 2, new: "2│TWO" }] },
+      undefined,
+      undefined,
+      { cwd } as never,
+    );
+
+    await expect(readFile(filePath, "utf8")).resolves.toBe("\uFEFFone\r\nTWO\r\n");
+  });
+});
