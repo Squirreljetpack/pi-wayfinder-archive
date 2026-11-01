@@ -71,8 +71,13 @@ function tempPathFor(absolutePath: string): string {
  * with the hash we read: another agent writing the same file in the meantime makes this call fail
  * instead of silently clobbering their change.
  */
+/** The exact bytes `writeSnapshot` would put on disk for this content. */
+export function serializeSnapshot(snapshot: TextSnapshot, text: string): string {
+  return snapshot.bom + (snapshot.eol === "\r\n" ? text.replace(/\n/g, "\r\n") : text);
+}
+
 export async function writeSnapshot(snapshot: TextSnapshot, text: string, signal?: AbortSignal): Promise<void> {
-  const restored = snapshot.bom + (snapshot.eol === "\r\n" ? text.replace(/\n/g, "\r\n") : text);
+  const restored = serializeSnapshot(snapshot, text);
   const tempPath = tempPathFor(snapshot.absolutePath);
 
   try {

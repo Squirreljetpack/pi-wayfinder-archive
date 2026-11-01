@@ -3,7 +3,8 @@ import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { applyRanges } from "./apply.js";
 import { normalizeEditArguments } from "./shims.js";
 import { resolveEdit, validateEdit, type EditSpec } from "./resolve.js";
-import { readSnapshot, restoreSnapshot, writeSnapshot, type TextSnapshot } from "./snapshot.js";
+import { readSnapshot, restoreSnapshot, serializeSnapshot, sha256, writeSnapshot, type TextSnapshot } from "./snapshot.js";
+import { appendTransaction } from "../history/db.js";
 import { expandPath } from "../read/paths.js";
 import {
   combineDiffs,
@@ -29,6 +30,7 @@ export interface EditToolDetails {
   diff: string;
   patch: string;
   firstChangedLine?: number;
+  transactionId: string | null;
 }
 
 interface EditGroup {
@@ -163,6 +165,18 @@ export function registerEditTool(pi: ExtensionAPI): void {
             throw new Error("edits produced no changes, nothing was written");
           }
 
+          const transactionId = await appendTransaction({
+            cwd: ctx.cwd,
+            kind: "edit",
+            summary: `${edits.length} edit(s) across ${staged.length} file(s)`,
+            changes: staged.map((file) => ({
+              path: file.snapshot.displayPath,
+              absolutePath: file.snapshot.absolutePath,
+              before: file.snapshot.raw,
+              afterSha: sha256(serializeSnapshot(file.snapshot, file.newText)),
+            })),
+          });
+
           const written: TextSnapshot[] = [];
           try {
             for (const file of staged) {
@@ -197,9 +211,15 @@ export function registerEditTool(pi: ExtensionAPI): void {
               staged.map((file) => ({ path: file.snapshot.displayPath, before: file.snapshot.text, after: file.newText })),
             ),
             firstChangedLine: diffs[0]?.firstChangedLine,
+            transactionId,
           };
 
-          return { content: [{ type: "text" as const, text: summarize(staged) }], details };
+          const transactionLine =
+            transactionId === null
+              ? "\n(History unavailable: this edit cannot be rolled back.)"
+              : `\nTransaction ${transactionId} — undo with rollback({ transaction_id: "${transactionId}" })`;
+
+          return { content: [{ type: "text" as const, text: `${summarize(staged)}${transactionLine}` }], details };
         },
       );
     },

@@ -57,6 +57,17 @@ export const EditSchema = Type.Object({
 	),
 });
 
+export const RollbackSchema = Type.Object({
+	transaction_id: Type.String({
+		description: 'Transaction id returned by edit, or "last" for the most recent one in this repository',
+	}),
+	force: Type.Optional(
+		Type.Boolean({
+			description: "Restore even when files changed after that transaction (default: false)",
+		}),
+	),
+});
+
 export const GetFileSkeletonSchema = Type.Object({
 	paths: Type.Array(
 		Type.String({ description: "Relative or absolute source file paths" }),

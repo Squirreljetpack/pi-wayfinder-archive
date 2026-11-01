@@ -535,3 +535,28 @@ Design notes worth remembering:
   level), a single edit object, a JSON-stringified `edits`, and a top-level `path` pushed down into
   each edit. A modern call is returned untouched.
 - Tests: 36 for edit (between subjects, shims, an end-to-end shimmed call). Totals: 145 passing.
+
+### Milestone 5 — transaction log + rollback (done)
+
+- `src/history/db.ts`: one SQLite database at `$PI_WAYFINDER_HOME` (default
+  `~/.cache/pi-wayfinder`), `txn` + `change` tables, `ON DELETE CASCADE`, `BEGIN IMMEDIATE` per
+  record, WAL. Pragma order is load-bearing (`busy_timeout` **before** `journal_mode`); retention is
+  `DELETE` past 500 rows plus a page-count check, then `wal_checkpoint(TRUNCATE)` +
+  `incremental_vacuum`, all best-effort.
+- `node:sqlite` is loaded through `process.getBuiltinModule("node:sqlite")`, not `import()`: the
+  test runner's resolver strips the `node:` prefix and tries to resolve `sqlite` as a package
+  (`Failed to load url sqlite`), and a plain dynamic import would have the same problem under any
+  bundler. The `ExperimentalWarning` is still suppressed during load only.
+- `edit` records the transaction **before** the write phase, with each file's raw pre-edit bytes and
+  the sha256 of the bytes it is about to write. The transcript gets
+  `Transaction <id> — undo with rollback({ transaction_id: "<id>" })`. If the database cannot be
+  opened the edit still happens and the result says history is unavailable.
+- `src/history/rollback.ts`: `rollback({ transaction_id | "last", force? })` verifies every file's
+  current hash against the recorded `after_sha`, refuses with a per-file diff of expected/found
+  unless `force`, writes the stored bytes back, and records itself as a `kind: "rollback"`
+  transaction — so a mistaken rollback is rollback-able. Unknown ids list the 5 most recent ids in
+  the same repository (`cwd` column).
+- Tests: `test/history.test.ts` (10) covering append/read, `last` per cwd, edit→rollback byte
+  equality, rollback-of-rollback, drift refusal, force, unknown id, unavailable database.
+  `test/setup.ts` points `PI_WAYFINDER_HOME` at a temp dir per test file so tests never touch the
+  real cache. Totals: 155 passing, typecheck clean.

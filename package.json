@@ -34,7 +34,7 @@
     "web-tree-sitter": "^0.22.6"
   },
   "devDependencies": {
-    "@types/node": "20.x",
+    "@types/node": "^24.19.2",
     "typescript": "^5.0.0",
     "vitest": "^2.0.0"
   },
