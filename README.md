@@ -1,8 +1,8 @@
-# pi-wayfinder2
+# pi-wayfinder
 
 Structure-aware code navigation and transactional editing tools for pi agents.
 
-Wayfinder2 keeps the tree-sitter half of [pi-wayfinder](https://github.com/deevus/pi-wayfinder) and
+A fork of [pi-wayfinder](https://github.com/deevus/pi-wayfinder) that keeps its tree-sitter half and
 replaces the anchor-based editing half with three ways to name a region that need no state: the
 exact text, a pair of delimiters, or line numbers. Every edit is validated before anything is
 written, count-verified, and recorded in a transaction log that can be rolled back.
@@ -78,7 +78,7 @@ sqlite3 ~/.cache/pi-wayfinder/history.db \
 ## Install
 
 ```bash
-pi install /path/to/pi-wayfinder2
+pi install git:github.com/Squirreljetpack/pi-wayfinder
 ```
 
 For local development:
@@ -87,7 +87,7 @@ For local development:
 pi -e .
 ```
 
-`pi-wayfinder2` registers tools named `edit` and `read`, so it cannot be enabled alongside the
+This package registers tools named `edit` and `read`, so it cannot be enabled alongside the
 original `pi-wayfinder` (pi rejects two extensions that register the same tool). Remove one.
 
 There are no flags, no modes and no slash commands: the extension always replaces `read` and `edit`.

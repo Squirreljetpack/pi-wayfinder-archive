@@ -1,5 +1,5 @@
 {
-  "name": "pi-wayfinder2",
+  "name": "pi-wayfinder",
   "version": "0.1.0",
   "description": "Structure-aware code navigation and delimiter/line/exact editing tools for pi agents.",
   "type": "module",
@@ -17,6 +17,14 @@
     "refactoring",
     "rollback"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Squirreljetpack/pi-wayfinder.git"
+  },
+  "homepage": "https://github.com/Squirreljetpack/pi-wayfinder",
+  "bugs": {
+    "url": "https://github.com/Squirreljetpack/pi-wayfinder/issues"
+  },
   "files": [
     "src/**/*.ts",
     "!src/**/*.test.ts",
