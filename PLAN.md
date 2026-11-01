@@ -348,7 +348,7 @@ Via each tool's `promptSnippet`/`promptGuidelines` plus one short `before_agent_
 ## 10. Target tree
 
 ```
-pi-wayfinder2/
+pi-wayfinder/
 ├── package.json          # pi.extensions: ["./src/index.ts"]; deps diff, tree-sitter-wasms, web-tree-sitter
 ├── tsconfig.json         # copied from upstream
 ├── README.md             # rewritten (no anchors, new tool docs, sqlite inspect one-liner)
@@ -405,7 +405,8 @@ pi-wayfinder2/
 
 ## 13. Open questions
 
-1. **Package name / publish scope** — `pi-wayfinder2`? Affects README + manifest only.
+1. ~~Package name / publish scope~~ — settled: `pi-wayfinder`, published as
+   `git:github.com/Squirreljetpack/pi-wayfinder`.
 2. **`exact` replace-all by default** — mitigation is `expected_matches` + rollback + loud counts.
 3. **`between`/`lines` are language-agnostic** (pure text); only the AST tools are language-gated.
 4. **No git coupling** — rollback snapshots are the safety net; requiring a clean worktree would
@@ -597,3 +598,14 @@ a `rollback`.
   double apply), BOM+CRLF with a pasted gutter in `lines` mode, and rollback of a file deleted after
   the edit (drift → refuse, `force` → recreate).
 - Totals: 159 tests, typecheck clean.
+
+### Publishing
+
+- Local dev tree renamed to `pi-wayfinder`; the upstream checkout (a fork of `deevus/pi-wayfinder`)
+  was archived at `~/gh/TEMP/pi-wayfinder`.
+- Published to `github.com/Squirreljetpack/pi-wayfinder` as a force-pushed `main`: the repository
+  history is this implementation's, the earlier fork commits live only in the TEMP checkout.
+- Installed with `pi install git:github.com/Squirreljetpack/pi-wayfinder`, which clones to
+  `~/.pi/agent/git/github.com/Squirreljetpack/pi-wayfinder`. Verified in a normal session (no
+  `-ne`, no `-e`): the `<tools>` block lists this package's `read`, `edit` and `rollback` with its
+  own guidelines, and no extension-load error is reported.
