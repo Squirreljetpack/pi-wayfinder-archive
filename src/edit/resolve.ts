@@ -190,8 +190,8 @@ function resolveBetween(text: string, spec: EditSpec): Hit[] {
 }
 
 /**
- * Line mode is line-oriented: the range covers whole lines including their line breaks, and a
- * non-empty replacement is given a trailing newline when the replaced block ended with one.
+ * Line mode is line-oriented: the range covers whole lines including their line breaks, so a
+ * replacement never splits a line and a deletion never leaves a blank one behind.
  */
 function resolveLines(text: string, spec: EditSpec): Hit[] {
   const starts = lineStarts(text);
@@ -219,9 +219,12 @@ function resolveLines(text: string, spec: EditSpec): Hit[] {
 export function resolveEdit(text: string, spec: EditSpec): ResolvedSpec {
   const mode = spec.mode as EditMode;
   const hits = mode === "exact" ? resolveExact(text, spec) : mode === "between" ? resolveBetween(text, spec) : resolveLines(text, spec);
-  const replacement = applyReplacementShape(mode, text, spec);
-
-  const ranges = hits.map((hit) => ({ mode, start: hit.start, end: hit.end, text: replacement }));
+  const ranges = hits.map((hit) => ({
+    mode,
+    start: hit.start,
+    end: hit.end,
+    text: shapeReplacement(mode, text, hit, spec),
+  }));
 
   if (ranges.length === 0 && spec.expected_matches === 0) {
     return { edit: spec, mode, ranges: [] };
@@ -244,16 +247,19 @@ export function resolveEdit(text: string, spec: EditSpec): ResolvedSpec {
   return { edit: spec, mode, ranges };
 }
 
-function applyReplacementShape(mode: EditMode, text: string, spec: EditSpec): string {
+/**
+ * Whole-line and delimiter-region replacements inherit the newline that ended the replaced region,
+ * so replacing "line 2" never joins it to line 3 and replacing a block body never runs into the
+ * closing delimiter. `exact` never reshapes: it replaces precisely what was asked for.
+ */
+function shapeReplacement(mode: EditMode, text: string, hit: Hit, spec: EditSpec): string {
   const replacement = spec.new ?? "";
+  if (mode === "exact" || replacement.length === 0) return replacement;
+  if (replacement.endsWith("\n")) return replacement;
 
-  if (mode !== "lines" || replacement.length === 0) return replacement;
-
-  const endLine = spec.end_line ?? (spec.start_line as number);
-  const isInsertion = endLine < (spec.start_line as number);
-  if (isInsertion) return replacement.endsWith("\n") ? replacement : `${replacement}\n`;
-
-  const blockConsumedNewline = endLine < lineStarts(text).length || text.endsWith("\n");
-  if (!blockConsumedNewline || replacement.endsWith("\n")) return replacement;
-  return `${replacement}\n`;
+  const regionText = text.slice(hit.start, hit.end);
+  if (regionText.endsWith("\n")) return `${replacement}\n`;
+  // Pure insertion: the range is empty, so it cannot inherit a newline from itself.
+  if (mode === "lines" && hit.start === hit.end) return `${replacement}\n`;
+  return replacement;
 }

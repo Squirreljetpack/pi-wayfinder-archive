@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyRanges } from "../src/edit/apply.js";
 import { lineStarts, resolveEdit, validateEdit, type EditSpec } from "../src/edit/resolve.js";
+import { normalizeEditArguments } from "../src/edit/shims.js";
 import { readSnapshot, writeSnapshot } from "../src/edit/snapshot.js";
 import { registerEditTool } from "../src/edit/tool.js";
 
@@ -277,5 +278,123 @@ describe("edit tool", () => {
         cwd,
       } as never),
     ).rejects.toThrow(/end is required/);
+  });
+});
+
+describe("edit between mode", () => {
+  it("replaces the text between delimiters and keeps the delimiters", () => {
+    const text = "function outer() {\n  oldBody();\n}\n";
+    const resolved = resolveEdit(
+      text,
+      spec({ path: "x.ts", mode: "between", start: "function outer() {", end: "\n}", new: "\n  newBody();" }),
+    );
+
+    expect(applyRanges(text, resolved.ranges)).toBe("function outer() {\n  newBody();\n}\n");
+  });
+
+  it("replaces the delimiters too when include_delimiters is set", () => {
+    const text = "// BEGIN\npayload\n// END\n";
+    const resolved = resolveEdit(
+      text,
+      spec({ path: "x.ts", mode: "between", start: "// BEGIN\n", end: "// END", include_delimiters: true, new: "// BEGIN\nnew payload\n// END" }),
+    );
+
+    expect(applyRanges(text, resolved.ranges)).toBe("// BEGIN\nnew payload\n// END\n");
+  });
+
+  it("inserts between adjacent delimiters with an empty region and empty old text", () => {
+    const text = "first();\nsecond();\n";
+    const resolved = resolveEdit(text, spec({ path: "x.ts", mode: "between", start: "first();\n", end: "second();", new: "inserted();\n" }));
+
+    expect(applyRanges(text, resolved.ranges)).toBe("first();\ninserted();\nsecond();\n");
+  });
+
+  it("replaces every delimiter pair in the file", () => {
+    const text = "<a>\none\n</a>\n<a>\ntwo\n</a>\n";
+    const resolved = resolveEdit(text, spec({ path: "x.ts", mode: "between", start: "<a>", end: "</a>", new: "<a>X</a>", include_delimiters: true }));
+
+    expect(applyRanges(text, resolved.ranges)).toBe("<a>X</a>\n<a>X</a>\n");
+  });
+
+  it("pairs greedily, so a start nested before the end delimiter belongs to the same region", () => {
+    const text = "A start\nB start\nB end\nA end\n";
+    const resolved = resolveEdit(text, spec({ path: "x.ts", mode: "between", start: "start\n", end: "B end", new: "X" }));
+
+    expect(resolved.ranges).toHaveLength(1);
+    expect(applyRanges(text, resolved.ranges)).toBe("A start\nX\nB end\nA end\n");
+  });
+
+  it("reports a dangling start delimiter with its line", () => {
+    const text = "open\nnothing after\n";
+    expect(() => resolveEdit(text, spec({ path: "x.ts", mode: "between", start: "open", end: "close", new: "x" }))).toThrow(
+      /No end delimiter found after the start delimiter:\n {2}1: open/,
+    );
+  });
+
+  it("reports a missing start delimiter", () => {
+    expect(() => resolveEdit("nothing\n", spec({ path: "x.ts", mode: "between", start: "open", end: "close", new: "x" }))).toThrow(
+      /Start delimiter "open" not found in x\.ts/,
+    );
+  });
+});
+
+describe("edit argument shims", () => {
+  it("normalizes pi-style oldText/newText entries", () => {
+    const shimmed = normalizeEditArguments({
+      edits: [{ path: "a.ts", oldText: "a", newText: "b" }],
+    }) as { edits: Array<Record<string, unknown>> };
+
+    expect(shimmed.edits[0]).toEqual({ path: "a.ts", mode: "exact", old: "a", new: "b" });
+  });
+
+  it("wraps a single edit object and parses a stringified edits array", () => {
+    const single = normalizeEditArguments({ edits: { path: "a.ts", old: "a", new: "b" } }) as {
+      edits: Array<Record<string, unknown>>;
+    };
+    expect(single.edits).toHaveLength(1);
+    expect(single.edits[0]).toMatchObject({ path: "a.ts", mode: "exact" });
+
+    const stringified = normalizeEditArguments({ edits: JSON.stringify([{ path: "a.ts", old: "a", new: "b" }]) }) as {
+      edits: Array<Record<string, unknown>>;
+    };
+    expect(stringified.edits).toHaveLength(1);
+    expect(stringified.edits[0]).toMatchObject({ path: "a.ts", old: "a", mode: "exact" });
+  });
+
+  it("pushes a top-level path down into each edit", () => {
+    const shimmed = normalizeEditArguments({
+      path: "a.ts",
+      edits: [
+        { old: "a", new: "b" },
+        { old: "c", new: "d" },
+      ],
+    }) as { path?: string; edits: Array<Record<string, unknown>> };
+
+    expect(shimmed.path).toBeUndefined();
+    expect(shimmed.edits.map((edit) => edit.path)).toEqual(["a.ts", "a.ts"]);
+  });
+
+  it("folds a flat top-level oldText/newText pair into edits", () => {
+    const shimmed = normalizeEditArguments({ path: "a.ts", oldText: "a", newText: "b" }) as {
+      edits: Array<Record<string, unknown>>;
+    };
+
+    expect(shimmed.edits).toEqual([{ path: "a.ts", mode: "exact", old: "a", new: "b" }]);
+  });
+
+  it("leaves a modern call untouched", () => {
+    const modern = { edits: [{ path: "a.ts", mode: "lines", start_line: 1, new: "x" }] };
+    expect(normalizeEditArguments(modern)).toEqual(modern);
+  });
+
+  it("executes a shimmed call end to end", async () => {
+    const cwd = await createTempDir();
+    await writeFile(join(cwd, "a.ts"), "const a = 1;\n", "utf8");
+
+    const tool = registerToolForTest();
+    const shimmed = normalizeEditArguments({ edits: [{ path: "a.ts", oldText: "const a = 1;", newText: "const a = 2;" }] });
+    await tool.execute("call-shim", shimmed, undefined, undefined, { cwd } as never);
+
+    await expect(readFile(join(cwd, "a.ts"), "utf8")).resolves.toBe("const a = 2;\n");
   });
 });

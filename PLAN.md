@@ -522,3 +522,16 @@ Design notes worth remembering:
   is an error.
 - `between` already exists in `resolve.ts` (greedy start/end pairing, `include_delimiters`,
   dangling-start diagnostics); milestone 4 is therefore just the argument shims plus its tests.
+
+### Milestone 4 — `between` mode + argument shims (done)
+
+- `between` pairs every `start` occurrence with the first `end` at or after it, greedily: a start
+  nested before that `end` belongs to the same region instead of opening a second one. Zero hits
+  reports either "start delimiter not found" or the line of each dangling start.
+- Replacement shaping is now one rule shared by `lines` and `between`: a non-empty replacement
+  inherits the newline that ended the replaced region (and a whole-line insertion always gets one).
+  Without it, replacing a block body produced `}…}`-style joins. `exact` never reshapes.
+- `src/edit/shims.ts` + `prepareArguments`: accepts `oldText`/`newText` (per edit or flat at the top
+  level), a single edit object, a JSON-stringified `edits`, and a top-level `path` pushed down into
+  each edit. A modern call is returned untouched.
+- Tests: 36 for edit (between subjects, shims, an end-to-end shimmed call). Totals: 145 passing.

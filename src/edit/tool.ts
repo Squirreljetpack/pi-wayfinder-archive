@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { applyRanges } from "./apply.js";
+import { normalizeEditArguments } from "./shims.js";
 import { resolveEdit, validateEdit, type EditSpec } from "./resolve.js";
 import { readSnapshot, restoreSnapshot, writeSnapshot, type TextSnapshot } from "./snapshot.js";
 import { expandPath } from "../read/paths.js";
@@ -107,6 +108,7 @@ export function registerEditTool(pi: ExtensionAPI): void {
       "Line-number gutters copied from read output are stripped from replacement text.",
     ],
     parameters: EditSchema,
+    prepareArguments: normalizeEditArguments,
     renderCall(args, theme) {
       const paths = Array.isArray(args.edits)
         ? Array.from(new Set(args.edits.map((edit) => edit?.path).filter((path): path is string => typeof path === "string")))
