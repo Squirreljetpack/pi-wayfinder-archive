@@ -1,5 +1,62 @@
 import { Type } from "typebox";
 
+export const EditSchema = Type.Object({
+	edits: Type.Array(
+		Type.Object({
+			path: Type.String({
+				description: "Relative or absolute source file path",
+			}),
+			mode: Type.Optional(
+				Type.Union([Type.Literal("exact"), Type.Literal("between"), Type.Literal("lines")], {
+					description:
+						"How to name the region: exact text, a start/end delimiter pair, or line numbers",
+				}),
+			),
+			expected_matches: Type.Optional(
+				Type.Integer({
+					minimum: 0,
+					description:
+						"Abort the whole call when this edit matches a different number of regions (0 asserts absence)",
+				}),
+			),
+			old: Type.Optional(
+				Type.String({
+					description: 'mode "exact": the text to find; every occurrence is replaced',
+				}),
+			),
+			new: Type.Optional(
+				Type.String({ description: 'Replacement text; "" deletes the region' }),
+			),
+			start: Type.Optional(
+				Type.String({
+					description: 'mode "between": delimiter that opens the region',
+				}),
+			),
+			end: Type.Optional(
+				Type.String({
+					description: 'mode "between": delimiter that closes the region',
+				}),
+			),
+			include_delimiters: Type.Optional(
+				Type.Boolean({
+					description:
+						'mode "between": also replace the delimiters themselves (default: keep them)',
+				}),
+			),
+			start_line: Type.Optional(
+				Type.Integer({ minimum: 1, description: 'mode "lines": 1-indexed first line' }),
+			),
+			end_line: Type.Optional(
+				Type.Integer({
+					minimum: 1,
+					description:
+						'mode "lines": last line, inclusive; omit to target start_line only; pass start_line - 1 to insert before it',
+				}),
+			),
+		}),
+	),
+});
+
 export const GetFileSkeletonSchema = Type.Object({
 	paths: Type.Array(
 		Type.String({ description: "Relative or absolute source file paths" }),

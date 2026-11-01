@@ -488,3 +488,37 @@ Notes:
 - Upstream `pi-wayfinder` is still installed globally; pi refuses to load two extensions that
   register the same tool names, so the fork and upstream cannot coexist in one config. Worth a
   README line, not a code change.
+
+### Milestone 3 — `edit` core: exact + lines (done)
+
+- `src/edit/snapshot.ts`: `TextSnapshot` holds LF-normalized text (for matching), the exact raw
+  bytes (for restore-on-failure), BOM, EOL, sha256 and mode. `writeSnapshot` writes a hidden
+  sibling temp file, chmods it to the original mode, **re-hashes the target immediately before
+  `rename`** (optimistic cross-process guard), and renames. `restoreSnapshot` puts raw bytes back.
+- `src/edit/resolve.ts`: one validator + one resolver per mode, all producing `{start, end, text}`
+  over the original text — so there is exactly one applier and one overlap check
+  (`src/edit/apply.ts`). `expected_matches` (including `0` as an assertion), gutter stripping and
+  line math live here.
+- `lines` mode is line-oriented: the range covers whole lines including their break, and a non-empty
+  replacement gains a trailing newline when the replaced block ended with one. That makes
+  replace/delete/insert all behave ("delete line 2" leaves no blank line, "replace line 2 with X"
+  does not join it to line 3). Insertion is `end_line = start_line - 1`; `start_line` may be
+  `total + 1` to append.
+- `exact` mode replaces every occurrence and tolerates only (a) CRLF in `old` and (b) trailing
+  whitespace on a single-line match. Multi-line whitespace drift is a hard error with line
+  locations — the deliberate S2 cut.
+- `src/edit/tool.ts`: validate → group by canonical path → nested mutation queues (sorted) → snapshot
+  and resolve **everything** → only then write. Any failure aborts before the first byte and is
+  reported for every failing file at once; a mid-write failure restores every already-written file
+  from its raw snapshot.
+- `createUnifiedPatch()` added to `rendering/diff-output.ts` for `details.patch`; the TUI reuses
+  `renderDiffResult`, so multi-file edits render as one panel per file.
+- Tests: `test/edit.test.ts` (23). Totals: 132 passing, typecheck clean.
+
+Design notes worth remembering:
+
+- The no-change check is transaction-level, not per file: a file whose edits are all no-ops (or a
+  passing `expected_matches: 0` assertion) is simply not written, but a call with nothing to write
+  is an error.
+- `between` already exists in `resolve.ts` (greedy start/end pairing, `include_delimiters`,
+  dangling-start diagnostics); milestone 4 is therefore just the argument shims plus its tests.

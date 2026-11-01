@@ -143,3 +143,15 @@ export function combineDiffs(diffs: Array<Pick<DiffDetails, "path" | "diff">>): 
     .map((item) => `Index: ${item.path}\n${item.diff.trimEnd()}`)
     .join("\n\n");
 }
+
+/** Standard unified patch over several files, for `details.patch`. */
+export function createUnifiedPatch(files: Array<{ path: string; before: string; after: string }>): string {
+  return files
+    .filter((file) => file.before !== file.after)
+    .map((file) =>
+      Diff.createTwoFilesPatch(`a/${file.path}`, `b/${file.path}`, file.before, file.after, undefined, undefined, {
+        context: 3,
+      }),
+    )
+    .join("");
+}
